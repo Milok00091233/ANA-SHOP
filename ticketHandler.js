@@ -239,4 +239,163 @@ module.exports = (client) => {
     }
 
   });
+
+  // ─────────────────────────────────────────────
+  // KOMENDA: !pomoc → wysyła panel pomocy
+  // ─────────────────────────────────────────────
+  client.on('messageCreate', async (message) => {
+    if (message.content === '!pomoc' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      const embed = new EmbedBuilder()
+        .setColor(0x1a1a2e)
+        .setTitle('❓ MC SHOP — POMOC')
+        .setDescription(
+          '>>> Potrzebujesz pomocy?\n\n' +
+          'Kliknij przycisk poniżej aby otworzyć ticket pomocy.\n' +
+          'Właściciel odpowie tak szybko jak to możliwe.\n\n' +
+          '**NIE ODPISUJ NIKOMU NA PV — TO SCAM!**'
+        )
+        .setImage(config.shopBannerUrl)
+        .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('open_pomoc')
+          .setLabel('❓ Otwórz Pomoc')
+          .setStyle(ButtonStyle.Secondary)
+      );
+
+      await message.channel.send({ embeds: [embed], components: [row] });
+      await message.delete().catch(() => {});
+    }
+  });
+
+  // ── Przycisk: Otwórz pomoc ──────────────
+  client.on('interactionCreate', async (interaction) => {
+    if (interaction.isButton() && interaction.customId === 'open_pomoc') {
+      await interaction.deferReply({ ephemeral: true });
+
+      const guild = interaction.guild;
+      const member = interaction.member;
+      const wlascicielRoleId = process.env.WLASCICIEL_ROLE_ID;
+
+      const existing = guild.channels.cache.find(
+        (c) => c.name === `pomoc-${member.user.username.toLowerCase().replace(/[^a-z0-9]/g, '')}`
+      );
+      if (existing) {
+        return interaction.editReply({ content: `❌ Masz już otwarty ticket pomocy: ${existing}` });
+      }
+
+      const pomocChannel = await guild.channels.create({
+        name: `pomoc-${member.user.username.replace(/[^a-z0-9]/gi, '').toLowerCase()}`,
+        type: ChannelType.GuildText,
+        parent: config.ticketCategoryId,
+        permissionOverwrites: [
+          { id: guild.roles.everyone, deny: [PermissionFlagsBits.ViewChannel] },
+          {
+            id: member.id,
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
+          },
+          {
+            id: wlascicielRoleId,
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels],
+          },
+        ],
+      });
+
+      const infoEmbed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle('🔴 MCSHOP × TICKET POMOC')
+        .addFields(
+          {
+            name: '>> INFORMACJE O UZYTKOWNIKU',
+            value: `>>> **>> Ping:** ${member}\n**>> Nazwa:** ${member.user.username}\n**>> Id:** ${member.id}`,
+          },
+          {
+            name: '>> TEMAT POMOCY:',
+            value: `>>> **>> Opis:** *użytkownik poda poniżej*`,
+          }
+        )
+        .setImage(config.shopBannerUrl)
+        .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
+
+      const welcomeEmbed = new EmbedBuilder()
+        .setColor(0x2b2d31)
+        .setDescription(
+          '👋 **Witaj! Opisz swój problem poniżej.**\n\n' +
+          '>>> Właściciel odpowie tak szybko jak to możliwe.\n' +
+          '**NIE ODPISUJ NIKOMU NA PV — TO SCAM!**'
+        );
+
+      const claimRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('claim_pomoc')
+          .setLabel('✅ Przejmij ticket')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('close_pomoc')
+          .setLabel('🔒 Zamknij ticket')
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      await pomocChannel.send({ content: `${member} | <@&${wlascicielRoleId}>` });
+      await pomocChannel.send({ embeds: [infoEmbed] });
+      await pomocChannel.send({ embeds: [welcomeEmbed], components: [claimRow] });
+
+      await interaction.editReply({ content: `✅ Twój ticket pomocy został otwarty: ${pomocChannel}` });
+    }
+
+    // ── Przycisk: Przejmij pomoc ──
+    if (interaction.isButton() && interaction.customId === 'claim_pomoc') {
+      const member = interaction.member;
+      const wlascicielRoleId = process.env.WLASCICIEL_ROLE_ID;
+
+      if (!member.roles.cache.has(wlascicielRoleId) && !member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ Tylko **Właściciel** może przejmować te tickety!', ephemeral: true });
+      }
+
+      const data = ticketData.get(interaction.channel.id);
+      if (data?.claimedBy) {
+        return interaction.reply({ content: `❌ Ticket już przejęty przez <@${data.claimedBy}>!`, ephemeral: true });
+      }
+
+      ticketData.set(interaction.channel.id, { claimedBy: member.id });
+      await interaction.channel.setName(`claimed-${interaction.channel.name.replace('pomoc-', '')}`).catch(() => {});
+
+      const disabledRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('claim_pomoc')
+          .setLabel(`✅ Przejęty przez ${member.user.username}`)
+          .setStyle(ButtonStyle.Success)
+          .setDisabled(true),
+        new ButtonBuilder()
+          .setCustomId('close_pomoc')
+          .setLabel('🔒 Zamknij ticket')
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      await interaction.update({ components: [disabledRow] });
+      await interaction.channel.send({ embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ Ticket przejęty przez ${member}!`)] });
+    }
+
+    // ── Przycisk: Zamknij pomoc ──
+    if (interaction.isButton() && interaction.customId === 'close_pomoc') {
+      const member = interaction.member;
+      const wlascicielRoleId = process.env.WLASCICIEL_ROLE_ID;
+
+      if (!member.roles.cache.has(wlascicielRoleId) && !member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ Tylko **Właściciel** może zamykać te tickety!', ephemeral: true });
+      }
+
+      await interaction.reply({ content: '🔒 Zamykanie ticketu za 5 sekund...' });
+      setTimeout(async () => {
+        ticketData.delete(interaction.channel.id);
+        await interaction.channel.delete().catch(() => {});
+      }, 5000);
+    }
+  });
+```
+
+Oraz dodaj `WLASCICIEL_ROLE_ID` w Railway → Variables:
+```
+WLASCICIEL_ROLE_ID=id_roli_wlasciciel
 };
