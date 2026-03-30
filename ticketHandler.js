@@ -9,7 +9,7 @@ const {
   StringSelectMenuOptionBuilder,
 } = require('discord.js');
 
-const config = require('../config.json');
+const config = require('./config.json');
 
 // Przechowuje info o ticketach (w pamięci; można podmienić na bazę danych)
 const ticketData = new Map();
