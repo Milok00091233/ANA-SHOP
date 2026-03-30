@@ -46,7 +46,7 @@ module.exports = (client) => {
     if (message.content === '!pomoc' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
       const embed = new EmbedBuilder()
         .setColor(0x1a1a2e)
-        .setTitle('❓ MC SHOP — POMOC')
+        .setTitle('❓ ANA SHOP — POMOC')
         .setDescription(
           '>>> Potrzebujesz pomocy?\n\n' +
           'Kliknij przycisk poniżej aby otworzyć ticket pomocy.\n' +
@@ -54,7 +54,7 @@ module.exports = (client) => {
           '**NIE ODPISUJ NIKOMU NA PV — TO SCAM!**'
         )
         .setImage(config.shopBannerUrl)
-        .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
+        .setFooter({ text: 'ANA SHOP • Najlepszy sklep' });
  
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('open_pomoc').setLabel('❓ Otwórz Pomoc').setStyle(ButtonStyle.Secondary)
