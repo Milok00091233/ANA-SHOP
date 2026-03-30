@@ -12,7 +12,7 @@ const client = new Client({
 });
 
 // Ładowanie handlerów
-const ticketHandler = require('./handlers/ticketHandler');
+const ticketHandler = require('./ticketHandler');
 ticketHandler(client);
 
 client.once('ready', () => {
