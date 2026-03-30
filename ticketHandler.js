@@ -23,7 +23,7 @@ module.exports = (client) => {
     if (message.content === '!setup' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
       const embed = new EmbedBuilder()
         .setColor(0x1a1a2e)
-        .setTitle('🛒 MC SHOP — SKLEP')
+        .setTitle('🛒 ANARCHIA SHOP — SKLEP')
         .setDescription(
           '>>> Witaj w naszym sklepie!\n\n' +
           'Aby złożyć zamówienie, kliknij przycisk poniżej.\n' +
@@ -33,7 +33,7 @@ module.exports = (client) => {
           '🔴 Nie odpisuj nikomu na PV — to SCAM!'
         )
         .setImage(config.shopBannerUrl)
-        .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
+        .setFooter({ text: 'ANA SHOP • Najlepszy sklep' });
  
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('open_ticket').setLabel('🎫 Otwórz Ticket').setStyle(ButtonStyle.Primary)
@@ -95,13 +95,13 @@ module.exports = (client) => {
  
       const infoEmbed = new EmbedBuilder()
         .setColor(0xff0000)
-        .setTitle('🔴 MCSHOP × TICKET SPRZEDAZ')
+        .setTitle('🔴 ANA SHOP × TICKET SPRZEDAZ')
         .addFields(
           { name: '>> INFORMACJE O UZYTKOWNIKU', value: `>>> **>> Ping:** ${member}\n**>> Nazwa:** ${member.user.username}\n**>> Id:** ${member.id}` },
           { name: '>> INFORMACJE O SPRZEDAZY:', value: `>>> **>> Przedmiot:** *użytkownik poda poniżej*` }
         )
         .setImage(config.shopBannerUrl)
-        .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
+        .setFooter({ text: 'ANA SHOP • Najlepszy sklep' });
  
       const welcomeEmbed = new EmbedBuilder()
         .setColor(0x2b2d31)
@@ -177,7 +177,7 @@ module.exports = (client) => {
  
       const infoEmbed = new EmbedBuilder()
         .setColor(0xff0000)
-        .setTitle('🔴 MCSHOP × TICKET POMOC')
+        .setTitle('🔴 ANA SHOP × TICKET POMOC')
         .addFields(
           { name: '>> INFORMACJE O UZYTKOWNIKU', value: `>>> **>> Ping:** ${member}\n**>> Nazwa:** ${member.user.username}\n**>> Id:** ${member.id}` },
           { name: '>> TEMAT POMOCY:', value: `>>> **>> Opis:** *użytkownik poda poniżej*` }
