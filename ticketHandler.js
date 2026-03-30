@@ -5,25 +5,21 @@ const {
   ChannelType,
   EmbedBuilder,
   PermissionFlagsBits,
-  StringSelectMenuBuilder,
-  StringSelectMenuOptionBuilder,
 } = require('discord.js');
-
+ 
 const config = {
   realizatorRoleId: process.env.REALIZATOR_ROLE_ID,
   ticketCategoryId: process.env.TICKET_CATEGORY_ID,
   shopBannerUrl: process.env.SHOP_BANNER_URL,
 };
-
-// Przechowuje info o ticketach (w pamięci; można podmienić na bazę danych)
+ 
 const ticketData = new Map();
-
+ 
 module.exports = (client) => {
-
-  // ─────────────────────────────────────────────
-  // KOMENDA: !setup  → wysyła panel z przyciskiem
-  // ─────────────────────────────────────────────
+ 
   client.on('messageCreate', async (message) => {
+    if (!message.member) return;
+ 
     if (message.content === '!setup' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
       const embed = new EmbedBuilder()
         .setColor(0x1a1a2e)
@@ -38,212 +34,15 @@ module.exports = (client) => {
         )
         .setImage(config.shopBannerUrl)
         .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
-
+ 
       const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('open_ticket')
-          .setLabel('🎫 Otwórz Ticket')
-          .setStyle(ButtonStyle.Primary)
+        new ButtonBuilder().setCustomId('open_ticket').setLabel('🎫 Otwórz Ticket').setStyle(ButtonStyle.Primary)
       );
-
+ 
       await message.channel.send({ embeds: [embed], components: [row] });
       await message.delete().catch(() => {});
     }
-  });
-
-  // ─────────────────────────────────────────────
-  // INTERAKCJE
-  // ─────────────────────────────────────────────
-  client.on('interactionCreate', async (interaction) => {
-
-    // ── 1. Przycisk: Otwórz ticket ──────────────
-    if (interaction.isButton() && interaction.customId === 'open_ticket') {
-      await interaction.deferReply({ ephemeral: true });
-
-      const guild = interaction.guild;
-      const member = interaction.member;
-
-      // Sprawdź czy użytkownik już ma otwarty ticket
-      const existing = guild.channels.cache.find(
-        (c) => c.name === `ticket-${member.user.username.toLowerCase().replace(/[^a-z0-9]/g, '')}` ||
-               (ticketData.get(c.id)?.userId === member.id)
-      );
-      if (existing) {
-        return interaction.editReply({
-          content: `❌ Masz już otwarty ticket: ${existing}`,
-        });
-      }
-
-      // Utwórz kanał ticketu
-      const ticketChannel = await guild.channels.create({
-        name: `ticket-${member.user.username.replace(/[^a-z0-9]/gi, '').toLowerCase()}`,
-        type: ChannelType.GuildText,
-        parent: config.ticketCategoryId,
-        permissionOverwrites: [
-          {
-            id: guild.roles.everyone,
-            deny: [PermissionFlagsBits.ViewChannel],
-          },
-          {
-            id: member.id,
-            allow: [
-              PermissionFlagsBits.ViewChannel,
-              PermissionFlagsBits.SendMessages,
-              PermissionFlagsBits.ReadMessageHistory,
-            ],
-          },
-          {
-            id: config.realizatorRoleId,
-            allow: [
-              PermissionFlagsBits.ViewChannel,
-              PermissionFlagsBits.SendMessages,
-              PermissionFlagsBits.ReadMessageHistory,
-              PermissionFlagsBits.ManageChannels,
-            ],
-          },
-        ],
-      });
-
-      // Zapisz dane ticketu
-      ticketData.set(ticketChannel.id, {
-        userId: member.id,
-        username: member.user.username,
-        claimedBy: null,
-        przedmiot: 'Nie podano',
-        openedAt: new Date(),
-      });
-
-      // ── Embed: Info o sprzedaży (jak na zdjęciu) ──
-      const infoEmbed = new EmbedBuilder()
-        .setColor(0xff0000)
-        .setTitle('🔴 MCSHOP × TICKET SPRZEDAZ')
-        .addFields(
-          {
-            name: '>> INFORMACJE O UZYTKOWNIKU',
-            value:
-              `>>> **>> Ping:** ${member}\n` +
-              `**>> Nazwa:** ${member.user.username}\n` +
-              `**>> Id:** ${member.id}`,
-          },
-          {
-            name: '>> INFORMACJE O SPRZEDAZY:',
-            value: `>>> **>> Przedmiot:** *użytkownik poda poniżej*`,
-          }
-        )
-        .setImage(config.shopBannerUrl)
-        .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
-
-      // ── Embed: Powitanie (jak na zdjęciu) ──
-      const welcomeEmbed = new EmbedBuilder()
-        .setColor(0x2b2d31)
-        .setDescription(
-          '🎉 **Dziękujemy za skorzystanie z naszych usług!**\n\n' +
-          '>>> Prosimy o oznaczenie roli **realizatorów**, jeżeli nikt od kilku minut nie przejął ticketa. ' +
-          'Pamiętaj: Nie wysyłaj kodów **Paysafecard** ani paragonów dopóki ticket nie zostanie przejęty i realizator o to nie poprosi!\n' +
-          '🚨 Nie dajemy zwrotu środków za **przedwczesnewysłanie kodów.**\n\n' +
-          '**NIE ODPISUJ NIKOMU NA PV, TO SCAM!**'
-        );
-
-      // ── Przycisk: Przejmij ticket ──
-      const claimRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('claim_ticket')
-          .setLabel('✅ Przejmij ticket')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId('close_ticket')
-          .setLabel('🔒 Zamknij ticket')
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      // Ping realizatora
-      const realizatorRole = guild.roles.cache.get(config.realizatorRoleId);
-      await ticketChannel.send({
-        content: `${member} | <@&${config.realizatorRoleId}>`,
-      });
-      await ticketChannel.send({ embeds: [infoEmbed] });
-      await ticketChannel.send({ embeds: [welcomeEmbed], components: [claimRow] });
-
-      await interaction.editReply({
-        content: `✅ Twój ticket został otwarty: ${ticketChannel}`,
-      });
-    }
-
-    // ── 2. Przycisk: Przejmij ticket ────────────
-    if (interaction.isButton() && interaction.customId === 'claim_ticket') {
-      const member = interaction.member;
-      const realizatorRole = interaction.guild.roles.cache.get(config.realizatorRoleId);
-
-      // Sprawdź czy użytkownik ma rangę realizatora
-      if (!member.roles.cache.has(config.realizatorRoleId)) {
-        return interaction.reply({
-          content: '❌ Tylko **Realizatorzy** mogą przejmować tickety!',
-          ephemeral: true,
-        });
-      }
-
-      const data = ticketData.get(interaction.channel.id);
-      if (!data) return interaction.reply({ content: '❌ Błąd danych ticketu.', ephemeral: true });
-
-      if (data.claimedBy) {
-        return interaction.reply({
-          content: `❌ Ten ticket został już przejęty przez <@${data.claimedBy}>!`,
-          ephemeral: true,
-        });
-      }
-
-      // Oznacz ticket jako przejęty
-      data.claimedBy = member.id;
-      ticketData.set(interaction.channel.id, data);
-
-      // Zaktualizuj nazwę kanału
-      await interaction.channel.setName(`claimed-${interaction.channel.name.replace('ticket-', '')}`).catch(() => {});
-
-      const claimedEmbed = new EmbedBuilder()
-        .setColor(0x57f287)
-        .setDescription(`✅ Ticket przejęty przez ${member}!\n\nRealizator wkrótce się z Tobą skontaktuje.`);
-
-      // Wyłącz przycisk Przejmij
-      const disabledRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('claim_ticket')
-          .setLabel(`✅ Przejęty przez ${member.user.username}`)
-          .setStyle(ButtonStyle.Success)
-          .setDisabled(true),
-        new ButtonBuilder()
-          .setCustomId('close_ticket')
-          .setLabel('🔒 Zamknij ticket')
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      await interaction.update({ components: [disabledRow] });
-      await interaction.channel.send({ embeds: [claimedEmbed] });
-    }
-
-    // ── 3. Przycisk: Zamknij ticket ─────────────
-    if (interaction.isButton() && interaction.customId === 'close_ticket') {
-      const member = interaction.member;
-
-      if (!member.roles.cache.has(config.realizatorRoleId) && !member.permissions.has(PermissionFlagsBits.Administrator)) {
-        return interaction.reply({
-          content: '❌ Tylko **Realizatorzy** mogą zamykać tickety!',
-          ephemeral: true,
-        });
-      }
-
-      await interaction.reply({ content: '🔒 Zamykanie ticketu za 5 sekund...' });
-      setTimeout(async () => {
-        ticketData.delete(interaction.channel.id);
-        await interaction.channel.delete().catch(() => {});
-      }, 5000);
-    }
-
-  });
-
-  // ─────────────────────────────────────────────
-  // KOMENDA: !pomoc → wysyła panel pomocy
-  // ─────────────────────────────────────────────
-  client.on('messageCreate', async (message) => {
+ 
     if (message.content === '!pomoc' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
       const embed = new EmbedBuilder()
         .setColor(0x1a1a2e)
@@ -256,146 +55,179 @@ module.exports = (client) => {
         )
         .setImage(config.shopBannerUrl)
         .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
-
+ 
       const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('open_pomoc')
-          .setLabel('❓ Otwórz Pomoc')
-          .setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId('open_pomoc').setLabel('❓ Otwórz Pomoc').setStyle(ButtonStyle.Secondary)
       );
-
+ 
       await message.channel.send({ embeds: [embed], components: [row] });
       await message.delete().catch(() => {});
     }
   });
-
-  // ── Przycisk: Otwórz pomoc ──────────────
+ 
   client.on('interactionCreate', async (interaction) => {
-    if (interaction.isButton() && interaction.customId === 'open_pomoc') {
+    if (!interaction.isButton()) return;
+ 
+    const { customId, member, guild, channel } = interaction;
+    const wlascicielRoleId = process.env.WLASCICIEL_ROLE_ID;
+ 
+    // ── Otwórz ticket sklepu ──
+    if (customId === 'open_ticket') {
       await interaction.deferReply({ ephemeral: true });
-
-      const guild = interaction.guild;
-      const member = interaction.member;
-      const wlascicielRoleId = process.env.WLASCICIEL_ROLE_ID;
-
+ 
+      const existing = guild.channels.cache.find(
+        (c) => ticketData.get(c.id)?.userId === member.id && ticketData.get(c.id)?.type === 'sklep'
+      );
+      if (existing) return interaction.editReply({ content: `❌ Masz już otwarty ticket: ${existing}` });
+ 
+      const ticketChannel = await guild.channels.create({
+        name: `ticket-${member.user.username.replace(/[^a-z0-9]/gi, '').toLowerCase()}`,
+        type: ChannelType.GuildText,
+        parent: config.ticketCategoryId,
+        permissionOverwrites: [
+          { id: guild.roles.everyone, deny: [PermissionFlagsBits.ViewChannel] },
+          { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+          { id: config.realizatorRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels] },
+        ],
+      });
+ 
+      ticketData.set(ticketChannel.id, { userId: member.id, username: member.user.username, claimedBy: null, type: 'sklep', openedAt: new Date() });
+ 
+      const infoEmbed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle('🔴 MCSHOP × TICKET SPRZEDAZ')
+        .addFields(
+          { name: '>> INFORMACJE O UZYTKOWNIKU', value: `>>> **>> Ping:** ${member}\n**>> Nazwa:** ${member.user.username}\n**>> Id:** ${member.id}` },
+          { name: '>> INFORMACJE O SPRZEDAZY:', value: `>>> **>> Przedmiot:** *użytkownik poda poniżej*` }
+        )
+        .setImage(config.shopBannerUrl)
+        .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
+ 
+      const welcomeEmbed = new EmbedBuilder()
+        .setColor(0x2b2d31)
+        .setDescription(
+          '🎉 **Dziękujemy za skorzystanie z naszych usług!**\n\n' +
+          '>>> Prosimy o oznaczenie roli **realizatorów**, jeżeli nikt od kilku minut nie przejął ticketa. ' +
+          'Pamiętaj: Nie wysyłaj kodów **Paysafecard** ani paragonów dopóki ticket nie zostanie przejęty i realizator o to nie poprosi!\n' +
+          '🚨 Nie dajemy zwrotu środków za **przedwczesnewysłanie kodów.**\n\n' +
+          '**NIE ODPISUJ NIKOMU NA PV, TO SCAM!**'
+        );
+ 
+      const claimRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('claim_ticket').setLabel('✅ Przejmij ticket').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Zamknij ticket').setStyle(ButtonStyle.Danger)
+      );
+ 
+      await ticketChannel.send({ content: `${member} | <@&${config.realizatorRoleId}>` });
+      await ticketChannel.send({ embeds: [infoEmbed] });
+      await ticketChannel.send({ embeds: [welcomeEmbed], components: [claimRow] });
+      await interaction.editReply({ content: `✅ Twój ticket został otwarty: ${ticketChannel}` });
+    }
+ 
+    // ── Przejmij ticket sklepu ──
+    if (customId === 'claim_ticket') {
+      if (!member.roles.cache.has(config.realizatorRoleId)) {
+        return interaction.reply({ content: '❌ Tylko **Realizatorzy** mogą przejmować tickety!', ephemeral: true });
+      }
+      const data = ticketData.get(channel.id);
+      if (!data) return interaction.reply({ content: '❌ Błąd danych ticketu.', ephemeral: true });
+      if (data.claimedBy) return interaction.reply({ content: `❌ Ticket już przejęty przez <@${data.claimedBy}>!`, ephemeral: true });
+ 
+      data.claimedBy = member.id;
+      ticketData.set(channel.id, data);
+      await channel.setName(`claimed-${channel.name.replace('ticket-', '')}`).catch(() => {});
+ 
+      const disabledRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('claim_ticket').setLabel(`✅ Przejęty przez ${member.user.username}`).setStyle(ButtonStyle.Success).setDisabled(true),
+        new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Zamknij ticket').setStyle(ButtonStyle.Danger)
+      );
+ 
+      await interaction.update({ components: [disabledRow] });
+      await channel.send({ embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ Ticket przejęty przez ${member}!\n\nRealizator wkrótce się z Tobą skontaktuje.`)] });
+    }
+ 
+    // ── Zamknij ticket sklepu ──
+    if (customId === 'close_ticket') {
+      if (!member.roles.cache.has(config.realizatorRoleId) && !member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ Tylko **Realizatorzy** mogą zamykać tickety!', ephemeral: true });
+      }
+      await interaction.reply({ content: '🔒 Zamykanie ticketu za 5 sekund...' });
+      setTimeout(async () => { ticketData.delete(channel.id); await channel.delete().catch(() => {}); }, 5000);
+    }
+ 
+    // ── Otwórz ticket pomocy ──
+    if (customId === 'open_pomoc') {
+      await interaction.deferReply({ ephemeral: true });
+ 
       const existing = guild.channels.cache.find(
         (c) => c.name === `pomoc-${member.user.username.toLowerCase().replace(/[^a-z0-9]/g, '')}`
       );
-      if (existing) {
-        return interaction.editReply({ content: `❌ Masz już otwarty ticket pomocy: ${existing}` });
-      }
-
+      if (existing) return interaction.editReply({ content: `❌ Masz już otwarty ticket pomocy: ${existing}` });
+ 
       const pomocChannel = await guild.channels.create({
         name: `pomoc-${member.user.username.replace(/[^a-z0-9]/gi, '').toLowerCase()}`,
         type: ChannelType.GuildText,
         parent: config.ticketCategoryId,
         permissionOverwrites: [
           { id: guild.roles.everyone, deny: [PermissionFlagsBits.ViewChannel] },
-          {
-            id: member.id,
-            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
-          },
-          {
-            id: wlascicielRoleId,
-            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels],
-          },
+          { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+          { id: wlascicielRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels] },
         ],
       });
-
+ 
       const infoEmbed = new EmbedBuilder()
         .setColor(0xff0000)
         .setTitle('🔴 MCSHOP × TICKET POMOC')
         .addFields(
-          {
-            name: '>> INFORMACJE O UZYTKOWNIKU',
-            value: `>>> **>> Ping:** ${member}\n**>> Nazwa:** ${member.user.username}\n**>> Id:** ${member.id}`,
-          },
-          {
-            name: '>> TEMAT POMOCY:',
-            value: `>>> **>> Opis:** *użytkownik poda poniżej*`,
-          }
+          { name: '>> INFORMACJE O UZYTKOWNIKU', value: `>>> **>> Ping:** ${member}\n**>> Nazwa:** ${member.user.username}\n**>> Id:** ${member.id}` },
+          { name: '>> TEMAT POMOCY:', value: `>>> **>> Opis:** *użytkownik poda poniżej*` }
         )
         .setImage(config.shopBannerUrl)
         .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
-
+ 
       const welcomeEmbed = new EmbedBuilder()
         .setColor(0x2b2d31)
-        .setDescription(
-          '👋 **Witaj! Opisz swój problem poniżej.**\n\n' +
-          '>>> Właściciel odpowie tak szybko jak to możliwe.\n' +
-          '**NIE ODPISUJ NIKOMU NA PV — TO SCAM!**'
-        );
-
+        .setDescription('👋 **Witaj! Opisz swój problem poniżej.**\n\n>>> Właściciel odpowie tak szybko jak to możliwe.\n**NIE ODPISUJ NIKOMU NA PV — TO SCAM!**');
+ 
       const claimRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('claim_pomoc')
-          .setLabel('✅ Przejmij ticket')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId('close_pomoc')
-          .setLabel('🔒 Zamknij ticket')
-          .setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId('claim_pomoc').setLabel('✅ Przejmij ticket').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('close_pomoc').setLabel('🔒 Zamknij ticket').setStyle(ButtonStyle.Danger)
       );
-
+ 
       await pomocChannel.send({ content: `${member} | <@&${wlascicielRoleId}>` });
       await pomocChannel.send({ embeds: [infoEmbed] });
       await pomocChannel.send({ embeds: [welcomeEmbed], components: [claimRow] });
-
       await interaction.editReply({ content: `✅ Twój ticket pomocy został otwarty: ${pomocChannel}` });
     }
-
-    // ── Przycisk: Przejmij pomoc ──
-    if (interaction.isButton() && interaction.customId === 'claim_pomoc') {
-      const member = interaction.member;
-      const wlascicielRoleId = process.env.WLASCICIEL_ROLE_ID;
-
+ 
+    // ── Przejmij ticket pomocy ──
+    if (customId === 'claim_pomoc') {
       if (!member.roles.cache.has(wlascicielRoleId) && !member.permissions.has(PermissionFlagsBits.Administrator)) {
         return interaction.reply({ content: '❌ Tylko **Właściciel** może przejmować te tickety!', ephemeral: true });
       }
-
-      const data = ticketData.get(interaction.channel.id);
-      if (data?.claimedBy) {
-        return interaction.reply({ content: `❌ Ticket już przejęty przez <@${data.claimedBy}>!`, ephemeral: true });
-      }
-
-      ticketData.set(interaction.channel.id, { claimedBy: member.id });
-      await interaction.channel.setName(`claimed-${interaction.channel.name.replace('pomoc-', '')}`).catch(() => {});
-
+      const data = ticketData.get(channel.id);
+      if (data?.claimedBy) return interaction.reply({ content: `❌ Ticket już przejęty przez <@${data.claimedBy}>!`, ephemeral: true });
+ 
+      ticketData.set(channel.id, { claimedBy: member.id });
+      await channel.setName(`claimed-${channel.name.replace('pomoc-', '')}`).catch(() => {});
+ 
       const disabledRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('claim_pomoc')
-          .setLabel(`✅ Przejęty przez ${member.user.username}`)
-          .setStyle(ButtonStyle.Success)
-          .setDisabled(true),
-        new ButtonBuilder()
-          .setCustomId('close_pomoc')
-          .setLabel('🔒 Zamknij ticket')
-          .setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId('claim_pomoc').setLabel(`✅ Przejęty przez ${member.user.username}`).setStyle(ButtonStyle.Success).setDisabled(true),
+        new ButtonBuilder().setCustomId('close_pomoc').setLabel('🔒 Zamknij ticket').setStyle(ButtonStyle.Danger)
       );
-
+ 
       await interaction.update({ components: [disabledRow] });
-      await interaction.channel.send({ embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ Ticket przejęty przez ${member}!`)] });
+      await channel.send({ embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ Ticket przejęty przez ${member}!`)] });
     }
-
-    // ── Przycisk: Zamknij pomoc ──
-    if (interaction.isButton() && interaction.customId === 'close_pomoc') {
-      const member = interaction.member;
-      const wlascicielRoleId = process.env.WLASCICIEL_ROLE_ID;
-
+ 
+    // ── Zamknij ticket pomocy ──
+    if (customId === 'close_pomoc') {
       if (!member.roles.cache.has(wlascicielRoleId) && !member.permissions.has(PermissionFlagsBits.Administrator)) {
         return interaction.reply({ content: '❌ Tylko **Właściciel** może zamykać te tickety!', ephemeral: true });
       }
-
       await interaction.reply({ content: '🔒 Zamykanie ticketu za 5 sekund...' });
-      setTimeout(async () => {
-        ticketData.delete(interaction.channel.id);
-        await interaction.channel.delete().catch(() => {});
-      }, 5000);
+      setTimeout(async () => { ticketData.delete(channel.id); await channel.delete().catch(() => {}); }, 5000);
     }
+ 
   });
-```
-
-Oraz dodaj `WLASCICIEL_ROLE_ID` w Railway → Variables:
-```
-WLASCICIEL_ROLE_ID=id_roli_wlasciciel
 };
