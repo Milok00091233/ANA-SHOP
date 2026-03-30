@@ -9,7 +9,11 @@ const {
   StringSelectMenuOptionBuilder,
 } = require('discord.js');
 
-const config = require('./config.json');
+const config = {
+  realizatorRoleId: process.env.REALIZATOR_ROLE_ID,
+  ticketCategoryId: process.env.TICKET_CATEGORY_ID,
+  shopBannerUrl: process.env.SHOP_BANNER_URL,
+};
 
 // Przechowuje info o ticketach (w pamięci; można podmienić na bazę danych)
 const ticketData = new Map();
