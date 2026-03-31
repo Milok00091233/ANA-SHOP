@@ -97,7 +97,7 @@ module.exports = (client) => {
           { name: '>> INFORMACJE O UZYTKOWNIKU', value: `>>> **>> Ping:** ${member}\n**>> Nazwa:** ${member.user.username}\n**>> Id:** ${member.id}` },
           { name: '>> INFORMACJE O SPRZEDAZY:', value: `>>> **>> Przedmiot:** *użytkownik poda poniżej*` }
         )
-        .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
+        .setFooter({ text: 'ANA SHOP • Najlepszy sklep' });
 
       const welcomeEmbed = new EmbedBuilder()
         .setColor(0x2b2d31)
