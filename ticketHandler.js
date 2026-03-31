@@ -1,4 +1,4 @@
-popraw ten kod:const {
+const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -22,7 +22,7 @@ module.exports = (client) => {
     if (message.content === '!setup' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
       const embed = new EmbedBuilder()
         .setColor(0x1a1a2e)
-        .setTitle('🛒 ANA SHOP — SKLEP')
+        .setTitle('🛒 MC SHOP — SKLEP')
         .setDescription(
           '>>> Witaj w naszym sklepie!\n\n' +
           'Aby złożyć zamówienie, kliknij przycisk poniżej.\n' +
@@ -31,7 +31,7 @@ module.exports = (client) => {
           '🔴 Nie wysyłaj kodów Paysafecard ani paragonów dopóki realizator o to nie poprosi!\n' +
           '🔴 Nie odpisuj nikomu na PV — to SCAM!'
         )
-        .setFooter({ text: 'ANA SHOP • Najlepszy sklep' });
+        .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('open_ticket').setLabel('🎫 Otwórz Ticket').setStyle(ButtonStyle.Primary)
@@ -44,14 +44,14 @@ module.exports = (client) => {
     if (message.content === '!pomoc' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
       const embed = new EmbedBuilder()
         .setColor(0x1a1a2e)
-        .setTitle('❓ ANA SHOP — POMOC')
+        .setTitle('❓ MC SHOP — POMOC')
         .setDescription(
           '>>> Potrzebujesz pomocy?\n\n' +
           'Kliknij przycisk poniżej aby otworzyć ticket pomocy.\n' +
           'Właściciel odpowie tak szybko jak to możliwe.\n\n' +
           '**NIE ODPISUJ NIKOMU NA PV — TO SCAM!**'
         )
-        .setFooter({ text: 'ANA SHOP • Najlepszy sklep' });
+        .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('open_pomoc').setLabel('❓ Otwórz Pomoc').setStyle(ButtonStyle.Secondary)
@@ -97,7 +97,7 @@ module.exports = (client) => {
           { name: '>> INFORMACJE O UZYTKOWNIKU', value: `>>> **>> Ping:** ${member}\n**>> Nazwa:** ${member.user.username}\n**>> Id:** ${member.id}` },
           { name: '>> INFORMACJE O SPRZEDAZY:', value: `>>> **>> Przedmiot:** *użytkownik poda poniżej*` }
         )
-        .setFooter({ text: 'ANA SHOP • Najlepszy sklep' });
+        .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
 
       const welcomeEmbed = new EmbedBuilder()
         .setColor(0x2b2d31)
@@ -181,7 +181,7 @@ module.exports = (client) => {
             { name: '>> INFORMACJE O UZYTKOWNIKU', value: `>>> **>> Ping:** ${member}\n**>> Nazwa:** ${member.user.username}\n**>> Id:** ${member.id}` },
             { name: '>> TEMAT POMOCY:', value: `>>> **>> Opis:** *użytkownik poda poniżej*` }
           )
-          .setFooter({ text: 'ANA SHOP • Najlepszy sklep' });
+          .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
 
         const welcomeEmbed = new EmbedBuilder()
           .setColor(0x2b2d31)
