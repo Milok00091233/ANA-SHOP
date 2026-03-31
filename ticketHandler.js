@@ -31,7 +31,7 @@ module.exports = (client) => {
           '🔴 Nie wysyłaj kodów Paysafecard ani paragonów dopóki realizator o to nie poprosi!\n' +
           '🔴 Nie odpisuj nikomu na PV — to SCAM!'
         )
-        .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
+        .setFooter({ text: 'ANA SHOP • Najlepszy sklep' });
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('open_ticket').setLabel('🎫 Otwórz Ticket').setStyle(ButtonStyle.Primary)
