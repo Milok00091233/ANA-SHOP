@@ -10,7 +10,6 @@ const {
 const config = {
   realizatorRoleId: process.env.REALIZATOR_ROLE_ID,
   ticketCategoryId: process.env.TICKET_CATEGORY_ID,
-  shopBannerUrl: process.env.SHOP_BANNER_URL,
 };
 
 const ticketData = new Map();
@@ -20,7 +19,6 @@ module.exports = (client) => {
   client.on('messageCreate', async (message) => {
     if (!message.member) return;
 
-    // !setup → panel sklepu
     if (message.content === '!setup' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
       const embed = new EmbedBuilder()
         .setColor(0x1a1a2e)
@@ -43,7 +41,6 @@ module.exports = (client) => {
       await message.delete().catch(() => {});
     }
 
-    // !pomoc → panel pomocy
     if (message.content === '!pomoc' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
       const embed = new EmbedBuilder()
         .setColor(0x1a1a2e)
@@ -156,48 +153,56 @@ module.exports = (client) => {
 
     // ── Otwórz ticket pomocy ──
     if (customId === 'open_pomoc') {
-      await interaction.deferReply({ ephemeral: true });
+      try {
+        await interaction.deferReply({ ephemeral: true });
 
-      const existing = guild.channels.cache.find(
-        (c) => ticketData.get(c.id)?.userId === member.id && ticketData.get(c.id)?.type === 'pomoc'
-      );
-      if (existing) return interaction.editReply({ content: `❌ Masz już otwarty ticket pomocy: ${existing}` });
+        const existing = guild.channels.cache.find(
+          (c) => ticketData.get(c.id)?.userId === member.id && ticketData.get(c.id)?.type === 'pomoc'
+        );
+        if (existing) return interaction.editReply({ content: `❌ Masz już otwarty ticket pomocy: ${existing}` });
 
-      const pomocChannel = await guild.channels.create({
-        name: `pomoc-${member.user.username.replace(/[^a-z0-9]/gi, '').toLowerCase()}`,
-        type: ChannelType.GuildText,
-        parent: config.ticketCategoryId,
-        permissionOverwrites: [
-          { id: guild.roles.everyone, deny: [PermissionFlagsBits.ViewChannel] },
-          { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-          { id: wlascicielRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels] },
-        ],
-      });
+        const pomocChannel = await guild.channels.create({
+          name: `pomoc-${member.user.username.replace(/[^a-z0-9]/gi, '').toLowerCase()}`,
+          type: ChannelType.GuildText,
+          parent: config.ticketCategoryId,
+          permissionOverwrites: [
+            { id: guild.roles.everyone, deny: [PermissionFlagsBits.ViewChannel] },
+            { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+            { id: wlascicielRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels] },
+          ],
+        });
 
-      ticketData.set(pomocChannel.id, { userId: member.id, username: member.user.username, claimedBy: null, type: 'pomoc', openedAt: new Date() });
+        ticketData.set(pomocChannel.id, { userId: member.id, username: member.user.username, claimedBy: null, type: 'pomoc', openedAt: new Date() });
 
-      const infoEmbed = new EmbedBuilder()
-        .setColor(0xff0000)
-        .setTitle('🔴 MCSHOP × TICKET POMOC')
-        .addFields(
-          { name: '>> INFORMACJE O UZYTKOWNIKU', value: `>>> **>> Ping:** ${member}\n**>> Nazwa:** ${member.user.username}\n**>> Id:** ${member.id}` },
-          { name: '>> TEMAT POMOCY:', value: `>>> **>> Opis:** *użytkownik poda poniżej*` }
-        )
-        .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
+        const infoEmbed = new EmbedBuilder()
+          .setColor(0xff0000)
+          .setTitle('🔴 MCSHOP × TICKET POMOC')
+          .addFields(
+            { name: '>> INFORMACJE O UZYTKOWNIKU', value: `>>> **>> Ping:** ${member}\n**>> Nazwa:** ${member.user.username}\n**>> Id:** ${member.id}` },
+            { name: '>> TEMAT POMOCY:', value: `>>> **>> Opis:** *użytkownik poda poniżej*` }
+          )
+          .setFooter({ text: 'MC SHOP • Najlepszy sklep' });
 
-      const welcomeEmbed = new EmbedBuilder()
-        .setColor(0x2b2d31)
-        .setDescription('👋 **Witaj! Opisz swój problem poniżej.**\n\n>>> Właściciel odpowie tak szybko jak to możliwe.\n**NIE ODPISUJ NIKOMU NA PV — TO SCAM!**');
+        const welcomeEmbed = new EmbedBuilder()
+          .setColor(0x2b2d31)
+          .setDescription('👋 **Witaj! Opisz swój problem poniżej.**\n\n>>> Właściciel odpowie tak szybko jak to możliwe.\n**NIE ODPISUJ NIKOMU NA PV — TO SCAM!**');
 
-      const claimRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('claim_pomoc').setLabel('✅ Przejmij ticket').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('close_pomoc').setLabel('🔒 Zamknij ticket').setStyle(ButtonStyle.Danger)
-      );
+        const claimRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('claim_pomoc').setLabel('✅ Przejmij ticket').setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId('close_pomoc').setLabel('🔒 Zamknij ticket').setStyle(ButtonStyle.Danger)
+        );
 
-      await pomocChannel.send({ content: `${member} | <@&${wlascicielRoleId}>` });
-      await pomocChannel.send({ embeds: [infoEmbed] });
-      await pomocChannel.send({ embeds: [welcomeEmbed], components: [claimRow] });
-      await interaction.editReply({ content: `✅ Twój ticket pomocy został otwarty: ${pomocChannel}` });
+        await pomocChannel.send({ content: `${member} | <@&${wlascicielRoleId}>` });
+        await pomocChannel.send({ embeds: [infoEmbed] });
+        await pomocChannel.send({ embeds: [welcomeEmbed], components: [claimRow] });
+        await interaction.editReply({ content: `✅ Twój ticket pomocy został otwarty: ${pomocChannel}` });
+
+      } catch (err) {
+        console.error('Błąd przy otwieraniu ticketu pomocy:', err);
+        if (interaction.deferred) {
+          await interaction.editReply({ content: '❌ Wystąpił błąd. Spróbuj ponownie.' }).catch(() => {});
+        }
+      }
     }
 
     // ── Przejmij ticket pomocy ──
@@ -208,8 +213,8 @@ module.exports = (client) => {
       const data = ticketData.get(channel.id);
       if (data?.claimedBy) return interaction.reply({ content: `❌ Ticket już przejęty przez <@${data.claimedBy}>!`, ephemeral: true });
 
-      data.claimedBy = member.id;
-      ticketData.set(channel.id, data);
+      if (data) data.claimedBy = member.id;
+      ticketData.set(channel.id, data || { claimedBy: member.id });
       await channel.setName(`claimed-${channel.name.replace('pomoc-', '')}`).catch(() => {});
 
       const disabledRow = new ActionRowBuilder().addComponents(
