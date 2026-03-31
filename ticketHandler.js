@@ -5,20 +5,63 @@ const {
   ChannelType,
   EmbedBuilder,
   PermissionFlagsBits,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } = require('discord.js');
 
 const config = {
   realizatorRoleId: process.env.REALIZATOR_ROLE_ID,
   ticketCategoryId: process.env.TICKET_CATEGORY_ID,
+  verifiedRoleId: process.env.VERIFIED_ROLE_ID,
+  lobbyChannelId: process.env.LOBBY_CHANNEL_ID,
 };
 
 const ticketData = new Map();
 
 module.exports = (client) => {
 
+  // ─────────────────────────────────────────────
+  // POWITANIE NA #lobby + KTO ZAPROSIŁ
+  // ─────────────────────────────────────────────
+  client.on('guildMemberAdd', async (member) => {
+    const lobbyChannel = member.guild.channels.cache.get(config.lobbyChannelId);
+    if (!lobbyChannel) return;
+
+    // Pobierz logi zaproszeń
+    let inviterText = 'Nieznany';
+    try {
+      const auditLogs = await member.guild.fetchAuditLogs({ type: 28, limit: 5 });
+      const inviteLogs = auditLogs.entries.first();
+      if (inviteLogs) {
+        inviterText = `<@${inviteLogs.executor.id}>`;
+      }
+    } catch (e) {}
+
+    const embed = new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle('👋 Nowy członek dołączył!')
+      .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
+      .addFields(
+        { name: '👤 Użytkownik', value: `${member} (${member.user.username})`, inline: true },
+        { name: '🆔 ID', value: member.id, inline: true },
+        { name: '📨 Zaproszony przez', value: inviterText, inline: false },
+        { name: '📅 Konto założone', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true },
+        { name: '👥 Członków na serwerze', value: `${member.guild.memberCount}`, inline: true },
+      )
+      .setFooter({ text: 'ANA SHOP • Najlepszy sklep' })
+      .setTimestamp();
+
+    await lobbyChannel.send({ embeds: [embed] });
+  });
+
+  // ─────────────────────────────────────────────
+  // KOMENDY: !setup, !pomoc, !weryfikacja
+  // ─────────────────────────────────────────────
   client.on('messageCreate', async (message) => {
     if (!message.member) return;
 
+    // !setup → panel sklepu
     if (message.content === '!setup' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
       const embed = new EmbedBuilder()
         .setColor(0x1a1a2e)
@@ -41,6 +84,7 @@ module.exports = (client) => {
       await message.delete().catch(() => {});
     }
 
+    // !pomoc → panel pomocy
     if (message.content === '!pomoc' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
       const embed = new EmbedBuilder()
         .setColor(0x1a1a2e)
@@ -60,13 +104,75 @@ module.exports = (client) => {
       await message.channel.send({ embeds: [embed], components: [row] });
       await message.delete().catch(() => {});
     }
+
+    // !weryfikacja → panel weryfikacji
+    if (message.content === '!weryfikacja' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      const embed = new EmbedBuilder()
+        .setColor(0x57f287)
+        .setTitle('✅ ANA SHOP — WERYFIKACJA')
+        .setDescription(
+          '**Aby zweryfikować konto:**\n\n' +
+          '>>> **1.** Kliknij przycisk **Zweryfikuj** poniżej.\n' +
+          '**2.** Wpisz **TAK** aby potwierdzić, że nie jesteś robotem.\n' +
+          '**3.** Po poprawnej odpowiedzi otrzymasz rangę **zweryfikowany**.'
+        )
+        .setFooter({ text: 'ANA SHOP • Najlepszy sklep' });
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('verify_btn').setLabel('🔒 Zweryfikuj').setStyle(ButtonStyle.Success)
+      );
+
+      await message.channel.send({ embeds: [embed], components: [row] });
+      await message.delete().catch(() => {});
+    }
   });
 
+  // ─────────────────────────────────────────────
+  // WSZYSTKIE INTERAKCJE
+  // ─────────────────────────────────────────────
   client.on('interactionCreate', async (interaction) => {
+    const { member, guild, channel } = interaction;
+    const wlascicielRoleId = process.env.WLASCICIEL_ROLE_ID;
+
+    // ── Przycisk weryfikacji → otwórz modal ──
+    if (interaction.isButton() && interaction.customId === 'verify_btn') {
+      const modal = new ModalBuilder()
+        .setCustomId('verify_modal')
+        .setTitle('Weryfikacja');
+
+      const input = new TextInputBuilder()
+        .setCustomId('verify_answer')
+        .setLabel('Czy NIE jesteś robotem? Wpisz TAK.')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('TAK')
+        .setRequired(true);
+
+      modal.addComponents(new ActionRowBuilder().addComponents(input));
+      await interaction.showModal(modal);
+      return;
+    }
+
+    // ── Odpowiedź z modala weryfikacji ──
+    if (interaction.isModalSubmit() && interaction.customId === 'verify_modal') {
+      const answer = interaction.fields.getTextInputValue('verify_answer').trim().toUpperCase();
+
+      if (answer === 'TAK') {
+        const role = guild.roles.cache.get(config.verifiedRoleId);
+        if (role) {
+          await member.roles.add(role).catch(() => {});
+          await interaction.reply({ content: '✅ Zostałeś zweryfikowany i otrzymałeś rangę **zweryfikowany**!', ephemeral: true });
+        } else {
+          await interaction.reply({ content: '❌ Błąd: Nie znaleziono roli. Skontaktuj się z adminem.', ephemeral: true });
+        }
+      } else {
+        await interaction.reply({ content: '❌ Niepoprawna odpowiedź! Wpisz **TAK** aby się zweryfikować.', ephemeral: true });
+      }
+      return;
+    }
+
     if (!interaction.isButton()) return;
 
-    const { customId, member, guild, channel } = interaction;
-    const wlascicielRoleId = process.env.WLASCICIEL_ROLE_ID;
+    const customId = interaction.customId;
 
     // ── Otwórz ticket sklepu ──
     if (customId === 'open_ticket') {
@@ -199,9 +305,7 @@ module.exports = (client) => {
 
       } catch (err) {
         console.error('Błąd przy otwieraniu ticketu pomocy:', err);
-        if (interaction.deferred) {
-          await interaction.editReply({ content: '❌ Wystąpił błąd. Spróbuj ponownie.' }).catch(() => {});
-        }
+        if (interaction.deferred) await interaction.editReply({ content: '❌ Wystąpił błąd. Spróbuj ponownie.' }).catch(() => {});
       }
     }
 
