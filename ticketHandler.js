@@ -693,11 +693,10 @@ module.exports = (client) => {
       .setTitle('🏅 JAK NAPISAĆ LEGIT CHECKA ?')
       .setDescription(
         '**» WZÓR**\n' +
-        '```+rep @realizator sprzedaż/kupno itemów [kwota] PLN```\n' +
+        '```+rep @realizator kupno itemów [kwota] PLN```\n' +
         '**» PRZYKŁAD**\n' +
-        '```+rep @DEV Mavik kupno ANARCHIA_LIFESTEAL 200.00 PLN```\n\n' +
+        '```+rep @[NO LIMIT] Milok0009 kupno ANARCHIA_LIFESTEAL 200.00 PLN```\n\n' +
         'Na czym polega **system legit-checków?** klient po zakupie ma **5 minut na decyzję** czy chce **dobrowolnie potwierdzić** transakcję, ' +
-        'jeżeli nie wybierze żadnych z opcji (wystawia/nie wystawia) **bot robi to automatycznie** wysyłając wiadomość z jego profilowym oraz nazwą na ten kanał.\n\n' +
         '> **ANA SHOP • Najlepszy sklep**'
       );
 
