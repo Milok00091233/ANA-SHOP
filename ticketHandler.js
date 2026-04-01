@@ -334,7 +334,7 @@ module.exports = (client) => {
             '🅿️ PayPal — **10%**\n' +
             '🪙 Kryptowaluty (LTC, SOL, BTC) — **0%**',
         })
-        .setFooter({ text: 'ANA SHOP • Najlepszy sklep • kurs: 1 PLN = 6 500' });
+        .setFooter({ text: 'ANA SHOP • Najlepszy sklep • kurs: 1 PLN = 7 000' });
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('calc_ile_otrzymam').setLabel('Ile otrzymam?').setStyle(ButtonStyle.Secondary),
