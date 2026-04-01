@@ -10,23 +10,6 @@ const {
   TextInputStyle,
 } = require('discord.js');
 
-const fs = require('fs');
-const path = require('path');
-
-const counterPath = path.join(__dirname, 'counter.json');
-
-function getCount() {
-  try {
-    return JSON.parse(fs.readFileSync(counterPath, 'utf8')).legitCount || 0;
-  } catch { return 0; }
-}
-
-function incrementCount() {
-  const count = getCount() + 1;
-  fs.writeFileSync(counterPath, JSON.stringify({ legitCount: count }));
-  return count;
-}
-
 const config = {
   realizatorRoleId: process.env.REALIZATOR_ROLE_ID,
   ticketCategoryId: process.env.TICKET_CATEGORY_ID,
@@ -37,17 +20,27 @@ const config = {
 
 const ticketData = new Map();
 
+// ── Licznik z Railway Variables (przez process.env) ──
+// Przechowujemy w pamięci, startujemy od wartości z env LEGIT_COUNT
+let legitCount = parseInt(process.env.LEGIT_COUNT || '0', 10);
+
 module.exports = (client) => {
 
   // ─────────────────────────────────────────────
-  // LEGIT CHECK — wykryj zdjęcie, usuń, wyślij embed
+  // LEGIT CHECK
   // ─────────────────────────────────────────────
   client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
     if (!message.member) return;
 
-    // Legit check
     if (message.channel.id === config.legitChannelId) {
+      // Usuń wszystko co nie jest od admina
+      if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        await message.delete().catch(() => {});
+        return;
+      }
+
+      // Admin wysłał zdjęcie
       const hasImage = message.attachments.some(a =>
         a.contentType && a.contentType.startsWith('image/')
       );
@@ -57,28 +50,24 @@ module.exports = (client) => {
           a.contentType && a.contentType.startsWith('image/')
         );
 
-        const count = incrementCount();
+        const opisTransakcji = message.content?.trim() || 'Anarchia LifeSteal';
+        legitCount++;
 
         await message.delete().catch(() => {});
 
         const embed = new EmbedBuilder()
-          .setColor(0x57f287)
+          .setColor(0x2b2d31)
           .setDescription(
-            `**» ✅ LEGIT CHECK → ${count}**\n` +
+            `:wymiensianoksa: **${opisTransakcji}**\n\n` +
+            `>>> **» ✅ LEGIT CHECK → ${legitCount}**\n` +
             `**» ✅ Klient potwierdził udaną transakcję**\n` +
             `**» 🏪 ANA SHOP - Bezpieczne zakupy**`
           )
           .setImage(attachment.url)
-          .setFooter({ text: `ANA SHOP • Legit Check #${count}` })
+          .setFooter({ text: `ANA SHOP • Legit Check #${legitCount} • Dziś` })
           .setTimestamp();
 
         await message.channel.send({ embeds: [embed] });
-        return;
-      }
-
-      // Usuń też zwykłe wiadomości tekstowe (opcjonalnie)
-      if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-        await message.delete().catch(() => {});
       }
       return;
     }
@@ -160,9 +149,13 @@ module.exports = (client) => {
 
     let inviterText = 'Nieznany';
     try {
-      const auditLogs = await member.guild.fetchAuditLogs({ type: 28, limit: 5 });
-      const inviteLogs = auditLogs.entries.first();
-      if (inviteLogs) inviterText = `<@${inviteLogs.executor.id}>`;
+      const invites = await member.guild.invites.fetch();
+      // Porównaj z poprzednimi zaproszeniami
+      const usedInvite = invites.find(i => i.uses > (client.inviteCache?.get(i.code) || 0));
+      if (usedInvite) inviterText = `<@${usedInvite.inviter.id}>`;
+      // Zaktualizuj cache
+      if (!client.inviteCache) client.inviteCache = new Map();
+      invites.forEach(i => client.inviteCache.set(i.code, i.uses));
     } catch (e) {}
 
     const embed = new EmbedBuilder()
@@ -182,6 +175,18 @@ module.exports = (client) => {
     await lobbyChannel.send({ embeds: [embed] });
   });
 
+  // Cache zaproszeń przy starcie bota
+  client.once('ready', async () => {
+    client.inviteCache = new Map();
+    for (const guild of client.guilds.cache.values()) {
+      try {
+        const invites = await guild.invites.fetch();
+        invites.forEach(i => client.inviteCache.set(i.code, i.uses));
+      } catch (e) {}
+    }
+    console.log('✅ Cache zaproszeń załadowany');
+  });
+
   // ─────────────────────────────────────────────
   // INTERAKCJE
   // ─────────────────────────────────────────────
@@ -189,7 +194,6 @@ module.exports = (client) => {
     const { member, guild, channel } = interaction;
     const wlascicielRoleId = process.env.WLASCICIEL_ROLE_ID;
 
-    // Weryfikacja — przycisk
     if (interaction.isButton() && interaction.customId === 'verify_btn') {
       const modal = new ModalBuilder()
         .setCustomId('verify_modal')
@@ -207,7 +211,6 @@ module.exports = (client) => {
       return;
     }
 
-    // Weryfikacja — modal
     if (interaction.isModalSubmit() && interaction.customId === 'verify_modal') {
       const answer = interaction.fields.getTextInputValue('verify_answer').trim().toUpperCase();
       if (answer === 'TAK') {
@@ -227,7 +230,6 @@ module.exports = (client) => {
     if (!interaction.isButton()) return;
     const customId = interaction.customId;
 
-    // Otwórz ticket sklepu
     if (customId === 'open_ticket') {
       await interaction.deferReply({ ephemeral: true });
 
@@ -279,7 +281,6 @@ module.exports = (client) => {
       await interaction.editReply({ content: `✅ Twój ticket został otwarty: ${ticketChannel}` });
     }
 
-    // Przejmij ticket sklepu
     if (customId === 'claim_ticket') {
       if (!member.roles.cache.has(config.realizatorRoleId)) {
         return interaction.reply({ content: '❌ Tylko **Realizatorzy** mogą przejmować tickety!', ephemeral: true });
@@ -301,7 +302,6 @@ module.exports = (client) => {
       await channel.send({ embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ Ticket przejęty przez ${member}!\n\nRealizator wkrótce się z Tobą skontaktuje.`)] });
     }
 
-    // Zamknij ticket sklepu
     if (customId === 'close_ticket') {
       if (!member.roles.cache.has(config.realizatorRoleId) && !member.permissions.has(PermissionFlagsBits.Administrator)) {
         return interaction.reply({ content: '❌ Tylko **Realizatorzy** mogą zamykać tickety!', ephemeral: true });
@@ -310,7 +310,6 @@ module.exports = (client) => {
       setTimeout(async () => { ticketData.delete(channel.id); await channel.delete().catch(() => {}); }, 5000);
     }
 
-    // Otwórz ticket pomocy
     if (customId === 'open_pomoc') {
       try {
         await interaction.deferReply({ ephemeral: true });
@@ -362,7 +361,6 @@ module.exports = (client) => {
       }
     }
 
-    // Przejmij ticket pomocy
     if (customId === 'claim_pomoc') {
       if (!member.roles.cache.has(wlascicielRoleId) && !member.permissions.has(PermissionFlagsBits.Administrator)) {
         return interaction.reply({ content: '❌ Tylko **Właściciel** może przejmować te tickety!', ephemeral: true });
@@ -383,7 +381,6 @@ module.exports = (client) => {
       await channel.send({ embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ Ticket przejęty przez ${member}!`)] });
     }
 
-    // Zamknij ticket pomocy
     if (customId === 'close_pomoc') {
       if (!member.roles.cache.has(wlascicielRoleId) && !member.permissions.has(PermissionFlagsBits.Administrator)) {
         return interaction.reply({ content: '❌ Tylko **Właściciel** może zamykać te tickety!', ephemeral: true });
