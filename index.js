@@ -14,4 +14,8 @@ const client = new Client({
 const ticketHandler = require('./ticketHandler');
 ticketHandler(client);
 
+client.once('ready', () => {
+  console.log(`✅ Bot zalogowany jako ${client.user.tag}`);
+});
+
 client.login(process.env.TOKEN);
