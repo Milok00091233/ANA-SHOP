@@ -8,6 +8,7 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  StringSelectMenuBuilder,
 } = require('discord.js');
 
 const config = {
@@ -15,69 +16,139 @@ const config = {
   ticketCategoryId: process.env.TICKET_CATEGORY_ID,
   verifiedRoleId: process.env.VERIFIED_ROLE_ID,
   lobbyChannelId: process.env.LOBBY_CHANNEL_ID,
-  legitChannelId: process.env.LEGIT_CHANNEL_ID,
 };
 
 const ticketData = new Map();
 
-// ── Licznik z Railway Variables (przez process.env) ──
-// Przechowujemy w pamięci, startujemy od wartości z env LEGIT_COUNT
-let legitCount = parseInt(process.env.LEGIT_COUNT || '0', 10);
+// ─────────────────────────────────────────────
+// SYSTEM ŚLEDZENIA ZAPROSZEŃ
+// ─────────────────────────────────────────────
+// inviteCache : guildId → Map(code → { uses, inviterId })
+const inviteCache = new Map();
+
+// joinedVia   : guildId → Map(memberId → inviterId)
+//   kto kogo zaprosił (potrzebne gdy ktoś wychodzi)
+const joinedVia = new Map();
+
+// inviteStats : guildId → Map(inviterId → { joined: Set, left: Set })
+//   joined = Set ID osób, które są teraz na serwerze
+//   left   = Set ID osób, które wyszły
+const inviteStats = new Map();
+
+function getStats(guildId, inviterId) {
+  if (!inviteStats.has(guildId)) inviteStats.set(guildId, new Map());
+  const gMap = inviteStats.get(guildId);
+  if (!gMap.has(inviterId)) gMap.set(inviterId, { joined: new Set(), left: new Set() });
+  return gMap.get(inviterId);
+}
 
 module.exports = (client) => {
 
+  // Załaduj zaproszenia po uruchomieniu bota
+  client.once('ready', async () => {
+    for (const guild of client.guilds.cache.values()) {
+      try {
+        const invites = await guild.invites.fetch();
+        const map = new Map();
+        for (const inv of invites.values()) {
+          map.set(inv.code, { uses: inv.uses ?? 0, inviterId: inv.inviter?.id ?? null });
+        }
+        inviteCache.set(guild.id, map);
+      } catch (e) {}
+    }
+  });
+
+  // Aktualizuj cache gdy ktoś tworzy zaproszenie
+  client.on('inviteCreate', (invite) => {
+    const map = inviteCache.get(invite.guild.id) ?? new Map();
+    map.set(invite.code, { uses: invite.uses ?? 0, inviterId: invite.inviter?.id ?? null });
+    inviteCache.set(invite.guild.id, map);
+  });
+
+  // Usuń z cache gdy zaproszenie zostaje usunięte
+  client.on('inviteDelete', (invite) => {
+    inviteCache.get(invite.guild.id)?.delete(invite.code);
+  });
+
   // ─────────────────────────────────────────────
-  // LEGIT CHECK
+  // POWITANIE NA #lobby + KTO ZAPROSIŁ
   // ─────────────────────────────────────────────
-  client.on('messageCreate', async (message) => {
-    if (message.author.bot) return;
-    if (!message.member) return;
+  client.on('guildMemberAdd', async (member) => {
+    const lobbyChannel = member.guild.channels.cache.get(config.lobbyChannelId);
+    if (!lobbyChannel) return;
 
-    if (message.channel.id === config.legitChannelId) {
-      // Usuń wszystko co nie jest od admina
-      if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-        await message.delete().catch(() => {});
-        return;
+    // Pobierz zaproszenia i porównaj z cache — znajdź który link użyto
+    let inviterText = 'Nieznany';
+    let inviterId = null;
+    try {
+      const newInvites = await member.guild.invites.fetch();
+      const oldMap = inviteCache.get(member.guild.id) ?? new Map();
+
+      for (const inv of newInvites.values()) {
+        const old = oldMap.get(inv.code);
+        if (old && inv.uses > old.uses && inv.inviter) {
+          inviterId = inv.inviter.id;
+          inviterText = `<@${inviterId}>`;
+          oldMap.set(inv.code, { uses: inv.uses, inviterId: inviterId });
+          break;
+        }
       }
+      inviteCache.set(member.guild.id, oldMap);
+    } catch (e) {}
 
-      // Admin wysłał zdjęcie
-      const hasImage = message.attachments.some(a =>
-        a.contentType && a.contentType.startsWith('image/')
-      );
+    // Zapisz kto kogo zaprosił
+    if (inviterId) {
+      if (!joinedVia.has(member.guild.id)) joinedVia.set(member.guild.id, new Map());
+      joinedVia.get(member.guild.id).set(member.id, inviterId);
 
-      if (hasImage) {
-        const attachment = message.attachments.find(a =>
-          a.contentType && a.contentType.startsWith('image/')
-        );
-
-        const opisTransakcji = message.content?.trim() || 'Anarchia LifeSteal';
-        legitCount++;
-
-        await message.delete().catch(() => {});
-
-        const embed = new EmbedBuilder()
-          .setColor(0x2b2d31)
-          .setDescription(
-            `:wymiensianoksa: **${opisTransakcji}**\n\n` +
-            `>>> **» ✅ LEGIT CHECK → ${legitCount}**\n` +
-            `**» ✅ Klient potwierdził udaną transakcję**\n` +
-            `**» 🏪 ANA SHOP - Bezpieczne zakupy**`
-          )
-          .setImage(attachment.url)
-          .setFooter({ text: `ANA SHOP • Legit Check #${legitCount} • Dziś` })
-          .setTimestamp();
-
-        await message.channel.send({ embeds: [embed] });
-      }
-      return;
+      const stats = getStats(member.guild.id, inviterId);
+      stats.joined.add(member.id);
+      stats.left.delete(member.id); // na wypadek gdyby wrócił
     }
 
-    // ─────────────────────────────────────────────
-    // KOMENDY ADMINA
-    // ─────────────────────────────────────────────
-    if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return;
+    const stats = inviterId ? getStats(member.guild.id, inviterId) : null;
+    const joinedCount = stats ? stats.joined.size : '?';
+    const leftCount   = stats ? stats.left.size   : '?';
 
-    if (message.content === '!setup') {
+    const embed = new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle('👋 Nowy członek dołączył!')
+      .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
+      .addFields(
+        { name: '👤 Użytkownik', value: `${member} (${member.user.username})`, inline: true },
+        { name: '🆔 ID', value: member.id, inline: true },
+        { name: '📨 Zaproszony przez', value: `${inviterText} • ✅ **${joinedCount}** na serwerze / 🚪 **${leftCount}** wyszło`, inline: false },
+        { name: '📅 Konto założone', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true },
+        { name: '👥 Członków na serwerze', value: `${member.guild.memberCount}`, inline: true },
+      )
+      .setFooter({ text: 'ANA SHOP • Najlepszy sklep' })
+      .setTimestamp();
+
+    await lobbyChannel.send({ embeds: [embed] });
+  });
+
+  // ─────────────────────────────────────────────
+  // ŚLEDZENIE WYJŚĆ
+  // ─────────────────────────────────────────────
+  client.on('guildMemberRemove', (member) => {
+    const guildJoinedVia = joinedVia.get(member.guild.id);
+    if (!guildJoinedVia) return;
+    const originalInviterId = guildJoinedVia.get(member.id);
+    if (!originalInviterId) return;
+
+    const stats = getStats(member.guild.id, originalInviterId);
+    stats.joined.delete(member.id);
+    stats.left.add(member.id);
+  });
+
+  // ─────────────────────────────────────────────
+  // KOMENDY: !setup, !pomoc, !weryfikacja
+  // ─────────────────────────────────────────────
+  client.on('messageCreate', async (message) => {
+    if (!message.member) return;
+
+    // !setup → panel sklepu
+    if (message.content === '!setup' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
       const embed = new EmbedBuilder()
         .setColor(0x1a1a2e)
         .setTitle('🛒 ANA SHOP — SKLEP')
@@ -99,7 +170,8 @@ module.exports = (client) => {
       await message.delete().catch(() => {});
     }
 
-    if (message.content === '!pomoc') {
+    // !pomoc → panel pomocy
+    if (message.content === '!pomoc' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
       const embed = new EmbedBuilder()
         .setColor(0x1a1a2e)
         .setTitle('❓ ANA SHOP — POMOC')
@@ -119,7 +191,8 @@ module.exports = (client) => {
       await message.delete().catch(() => {});
     }
 
-    if (message.content === '!weryfikacja') {
+    // !weryfikacja → panel weryfikacji
+    if (message.content === '!weryfikacja' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
       const embed = new EmbedBuilder()
         .setColor(0x57f287)
         .setTitle('✅ ANA SHOP — WERYFIKACJA')
@@ -138,62 +211,195 @@ module.exports = (client) => {
       await message.channel.send({ embeds: [embed], components: [row] });
       await message.delete().catch(() => {});
     }
-  });
 
-  // ─────────────────────────────────────────────
-  // POWITANIE NA #lobby
-  // ─────────────────────────────────────────────
-  client.on('guildMemberAdd', async (member) => {
-    const lobbyChannel = member.guild.channels.cache.get(config.lobbyChannelId);
-    if (!lobbyChannel) return;
+    // !zaproszenia → statystyki zaproszeń (na serwerze / wyszło)
+    if (message.content === '!zaproszenia') {
+      const userId = message.author.id;
+      const guildId = message.guild.id;
 
-    let inviterText = 'Nieznany';
-    try {
-      const invites = await member.guild.invites.fetch();
-      // Porównaj z poprzednimi zaproszeniami
-      const usedInvite = invites.find(i => i.uses > (client.inviteCache?.get(i.code) || 0));
-      if (usedInvite) inviterText = `<@${usedInvite.inviter.id}>`;
-      // Zaktualizuj cache
-      if (!client.inviteCache) client.inviteCache = new Map();
-      invites.forEach(i => client.inviteCache.set(i.code, i.uses));
-    } catch (e) {}
+      const stats = getStats(guildId, userId);
+      const onServer = stats.joined.size;
+      const left     = stats.left.size;
+      const total    = onServer + left;
 
-    const embed = new EmbedBuilder()
-      .setColor(0x5865f2)
-      .setTitle('👋 Nowy członek dołączył!')
-      .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
-      .addFields(
-        { name: '👤 Użytkownik', value: `${member} (${member.user.username})`, inline: true },
-        { name: '🆔 ID', value: member.id, inline: true },
-        { name: '📨 Zaproszony przez', value: inviterText, inline: false },
-        { name: '📅 Konto założone', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true },
-        { name: '👥 Członków na serwerze', value: `${member.guild.memberCount}`, inline: true },
-      )
-      .setFooter({ text: 'ANA SHOP • Najlepszy sklep' })
-      .setTimestamp();
+      const embed = new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle('📨 Twoje zaproszenia')
+        .setThumbnail(message.author.displayAvatarURL({ dynamic: true, size: 128 }))
+        .setDescription(`Statystyki zaproszeń dla ${message.author}`)
+        .addFields(
+          { name: '✅ Na serwerze',  value: `**${onServer}**`, inline: true },
+          { name: '🚪 Wyszło',       value: `**${left}**`,     inline: true },
+          { name: '🔢 Łącznie',      value: `**${total}**`,    inline: true },
+        )
+        .setFooter({ text: 'ANA SHOP • Najlepszy sklep • dane od ostatniego restartu bota' })
+        .setTimestamp();
 
-    await lobbyChannel.send({ embeds: [embed] });
-  });
-
-  // Cache zaproszeń przy starcie bota
-  client.once('ready', async () => {
-    client.inviteCache = new Map();
-    for (const guild of client.guilds.cache.values()) {
-      try {
-        const invites = await guild.invites.fetch();
-        invites.forEach(i => client.inviteCache.set(i.code, i.uses));
-      } catch (e) {}
+      // Usuń komendę — wyślij embed, auto-kasowanie po 20s
+      await message.delete().catch(() => {});
+      const reply = await message.channel.send({ content: `<@${userId}>`, embeds: [embed] });
+      setTimeout(() => reply.delete().catch(() => {}), 20000);
     }
-    console.log('✅ Cache zaproszeń załadowany');
+
+    // !kalkulator → panel kalkulatora prowizji (tylko admin)
+    if (message.content === '!kalkulator' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      const embed = new EmbedBuilder()
+        .setColor(0x1a1a2e)
+        .setTitle('🧮 ANA SHOP — KALKULATOR')
+        .setDescription(
+          '**Aby w szybki i prosty sposób obliczyć:**\n\n' +
+          '› ile otrzymasz waluty za określoną ilość PLN\n' +
+          '› ile musisz dać PLN, aby otrzymać określoną ilość waluty\n\n' +
+          'Kliknij odpowiedni przycisk poniżej.'
+        )
+        .addFields({
+          name: '💰 Prowizje wg metody płatności',
+          value:
+            '💳 PSC z paragonem — **15%**\n' +
+            '💳 PSC bez paragonu — **25%**\n' +
+            '📱 BLIK (przelew) — **0%**\n' +
+            '📱 Kod BLIK — **10%**\n' +
+            '🅿️ PayPal — **10%**\n' +
+            '🪙 Kryptowaluty (LTC, SOL, BTC) — **0%**',
+        })
+        .setFooter({ text: 'ANA SHOP • Najlepszy sklep • kurs: 1 PLN = 6 500' });
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('calc_ile_otrzymam').setLabel('Ile otrzymam?').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('calc_ile_musze_dac').setLabel('Ile muszę dać?').setStyle(ButtonStyle.Secondary),
+      );
+
+      await message.channel.send({ embeds: [embed], components: [row] });
+      await message.delete().catch(() => {});
+    }
   });
 
   // ─────────────────────────────────────────────
-  // INTERAKCJE
+  // WSZYSTKIE INTERAKCJE
   // ─────────────────────────────────────────────
   client.on('interactionCreate', async (interaction) => {
     const { member, guild, channel } = interaction;
     const wlascicielRoleId = process.env.WLASCICIEL_ROLE_ID;
 
+    // ── Kalkulator: "Ile otrzymam?" → select menu metody ──
+    if (interaction.isButton() && (interaction.customId === 'calc_ile_otrzymam' || interaction.customId === 'calc_ile_musze_dac')) {
+      const tryb = interaction.customId === 'calc_ile_otrzymam' ? 'otrzymam' : 'musze_dac';
+
+      const select = new StringSelectMenuBuilder()
+        .setCustomId(`calc_select_metoda_${tryb}`)
+        .setPlaceholder('Wybierz metodę płatności...')
+        .addOptions([
+          { label: 'PSC z paragonem',          description: 'Prowizja: 15%', value: 'psc_paragon',   emoji: '💳' },
+          { label: 'PSC bez paragonu',          description: 'Prowizja: 25%', value: 'psc_bez',       emoji: '💳' },
+          { label: 'BLIK (przelew)',            description: 'Prowizja: 0%',  value: 'blik_przelew',  emoji: '📱' },
+          { label: 'Kod BLIK',                  description: 'Prowizja: 10%', value: 'blik_kod',      emoji: '📱' },
+          { label: 'PayPal',                    description: 'Prowizja: 10%', value: 'paypal',        emoji: '🅿️' },
+          { label: 'Kryptowaluty (LTC/SOL/BTC)',description: 'Prowizja: 0%',  value: 'krypto',        emoji: '🪙' },
+        ]);
+
+      await interaction.reply({
+        content: '**Wybierz metodę płatności:**',
+        components: [new ActionRowBuilder().addComponents(select)],
+        ephemeral: true,
+      });
+      return;
+    }
+
+    // ── Kalkulator: wybrano metodę → otwórz modal z kwotą ──
+    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('calc_select_metoda_')) {
+      const tryb = interaction.customId.replace('calc_select_metoda_', '');
+      const metoda = interaction.values[0];
+
+      const modal = new ModalBuilder()
+        .setCustomId(`calc_modal_${tryb}__${metoda}`)
+        .setTitle('Obliczanie...');
+
+      const kwotaLabel = tryb === 'otrzymam' ? 'Kwota (w PLN):' : 'Kwota waluty (np. 125K):';
+      const kwotaPlaceholder = tryb === 'otrzymam' ? 'Przykład: 150 (w PLN)' : 'Przykład: 125K lub 125000';
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('calc_kwota')
+            .setLabel(kwotaLabel)
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder(kwotaPlaceholder)
+            .setRequired(true)
+        )
+      );
+
+      await interaction.showModal(modal);
+      return;
+    }
+
+    // ── Kalkulator: wynik po wpisaniu kwoty ──
+    if (interaction.isModalSubmit() && interaction.customId.startsWith('calc_modal_')) {
+      const KURS = 6500;
+      const PROWIZJE = {
+        'psc_paragon':  { nazwa: '💳 PSC z paragonem',           procent: 15 },
+        'psc_bez':      { nazwa: '💳 PSC bez paragonu',           procent: 25 },
+        'blik_przelew': { nazwa: '📱 BLIK (przelew)',             procent: 0  },
+        'blik_kod':     { nazwa: '📱 Kod BLIK',                   procent: 10 },
+        'paypal':       { nazwa: '🅿️ PayPal',                    procent: 10 },
+        'krypto':       { nazwa: '🪙 Kryptowaluty (LTC/SOL/BTC)', procent: 0  },
+      };
+
+      // customId format: calc_modal_{tryb}__{metoda}
+      const parts   = interaction.customId.replace('calc_modal_', '').split('__');
+      const tryb    = parts[0];
+      const metoda  = PROWIZJE[parts[1]];
+
+      if (!metoda) {
+        await interaction.reply({ content: '❌ Błąd danych. Spróbuj ponownie.', ephemeral: true });
+        return;
+      }
+
+      const rawKwota = interaction.fields.getTextInputValue('calc_kwota')
+        .trim()
+        .replace(/,/g, '.')
+        .replace(/[kK]$/, '000');
+      const kwota = parseFloat(rawKwota.replace(/[^0-9.]/g, ''));
+
+      if (isNaN(kwota) || kwota <= 0) {
+        await interaction.reply({ content: '❌ Nieprawidłowa kwota! Wpisz liczbę np. `150` lub `125K`.', ephemeral: true });
+        return;
+      }
+
+      const prowizjaUlamek = metoda.procent / 100;
+      let wynikText = '';
+
+      if (tryb === 'otrzymam') {
+        const netPLN      = kwota * (1 - prowizjaUlamek);
+        const waluta      = Math.floor(netPLN * KURS);
+        const prowizjaPLN = (kwota * prowizjaUlamek).toFixed(2);
+        wynikText =
+          `💵 Wpłacasz: **${kwota.toFixed(2)} PLN**\n` +
+          `💸 Prowizja (${metoda.procent}%): **${prowizjaPLN} PLN**\n` +
+          `🎮 Otrzymasz: **${waluta.toLocaleString('pl-PL')} waluty**`;
+      } else {
+        const brutoPLN    = (kwota / KURS) / (1 - prowizjaUlamek || 1);
+        const prowizjaPLN = (brutoPLN * prowizjaUlamek).toFixed(2);
+        wynikText =
+          `🎮 Chcesz: **${kwota.toLocaleString('pl-PL')} waluty**\n` +
+          `💸 Prowizja (${metoda.procent}%): **${prowizjaPLN} PLN**\n` +
+          `💵 Musisz zapłacić: **${brutoPLN.toFixed(2)} PLN**`;
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle('🧮 ANA SHOP — Wynik kalkulatora')
+        .addFields(
+          { name: '💳 Metoda płatności', value: metoda.nazwa, inline: false },
+          { name: '📊 Obliczenia',       value: wynikText,    inline: false },
+        )
+        .setFooter({ text: 'ANA SHOP • kurs: 1 PLN = 6 500' })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+      return;
+    }
+
+    // ── Przycisk weryfikacji → otwórz modal ──
     if (interaction.isButton() && interaction.customId === 'verify_btn') {
       const modal = new ModalBuilder()
         .setCustomId('verify_modal')
@@ -211,8 +417,10 @@ module.exports = (client) => {
       return;
     }
 
+    // ── Odpowiedź z modala weryfikacji ──
     if (interaction.isModalSubmit() && interaction.customId === 'verify_modal') {
       const answer = interaction.fields.getTextInputValue('verify_answer').trim().toUpperCase();
+
       if (answer === 'TAK') {
         const role = guild.roles.cache.get(config.verifiedRoleId);
         if (role) {
@@ -228,8 +436,10 @@ module.exports = (client) => {
     }
 
     if (!interaction.isButton()) return;
+
     const customId = interaction.customId;
 
+    // ── Otwórz ticket sklepu ──
     if (customId === 'open_ticket') {
       await interaction.deferReply({ ephemeral: true });
 
@@ -281,6 +491,7 @@ module.exports = (client) => {
       await interaction.editReply({ content: `✅ Twój ticket został otwarty: ${ticketChannel}` });
     }
 
+    // ── Przejmij ticket sklepu ──
     if (customId === 'claim_ticket') {
       if (!member.roles.cache.has(config.realizatorRoleId)) {
         return interaction.reply({ content: '❌ Tylko **Realizatorzy** mogą przejmować tickety!', ephemeral: true });
@@ -302,6 +513,7 @@ module.exports = (client) => {
       await channel.send({ embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ Ticket przejęty przez ${member}!\n\nRealizator wkrótce się z Tobą skontaktuje.`)] });
     }
 
+    // ── Zamknij ticket sklepu ──
     if (customId === 'close_ticket') {
       if (!member.roles.cache.has(config.realizatorRoleId) && !member.permissions.has(PermissionFlagsBits.Administrator)) {
         return interaction.reply({ content: '❌ Tylko **Realizatorzy** mogą zamykać tickety!', ephemeral: true });
@@ -310,6 +522,7 @@ module.exports = (client) => {
       setTimeout(async () => { ticketData.delete(channel.id); await channel.delete().catch(() => {}); }, 5000);
     }
 
+    // ── Otwórz ticket pomocy ──
     if (customId === 'open_pomoc') {
       try {
         await interaction.deferReply({ ephemeral: true });
@@ -361,6 +574,7 @@ module.exports = (client) => {
       }
     }
 
+    // ── Przejmij ticket pomocy ──
     if (customId === 'claim_pomoc') {
       if (!member.roles.cache.has(wlascicielRoleId) && !member.permissions.has(PermissionFlagsBits.Administrator)) {
         return interaction.reply({ content: '❌ Tylko **Właściciel** może przejmować te tickety!', ephemeral: true });
@@ -381,6 +595,7 @@ module.exports = (client) => {
       await channel.send({ embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ Ticket przejęty przez ${member}!`)] });
     }
 
+    // ── Zamknij ticket pomocy ──
     if (customId === 'close_pomoc') {
       if (!member.roles.cache.has(wlascicielRoleId) && !member.permissions.has(PermissionFlagsBits.Administrator)) {
         return interaction.reply({ content: '❌ Tylko **Właściciel** może zamykać te tickety!', ephemeral: true });
