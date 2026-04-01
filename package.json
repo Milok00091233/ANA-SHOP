@@ -1,7 +1,7 @@
 {
-  "name": "mcshop-bot",
+  "name": "ANA SHOP-bot",
   "version": "1.0.0",
-  "description": "MC SHOP Discord Ticket Bot",
+  "description": "ANA SHOP Discord Ticket Bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
