@@ -190,8 +190,8 @@ module.exports = (client) => {
       .setTitle(`✅ LEGIT CHECK → ${legitNumber}`)
       .addFields(
         { name: 'Kupno itemów',                  value: `>>> **${config.legitServerName}**`, inline: false },
-        { name: 'Klient potwierdził transakcję', value: '\u200b', inline: false },
-        { name: '🛡️ ANA SHOP — Bezpieczne zakupy', value: '\u200b', inline: false },
+        { name: 'Klient potwierdził transakcję – dziękujemy za zaufanie.', value: '\u200b', inline: false },
+        { name: '💰 ANA SHOP — Bezpieczne zakupy', value: '\u200b', inline: false },
       )
       .setFooter({ text: 'ANA SHOP • Najlepszy sklep' })
       .setTimestamp();
