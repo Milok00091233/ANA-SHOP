@@ -190,8 +190,8 @@ module.exports = (client) => {
       .setTitle(`✅ LEGIT CHECK → ${legitNumber}`)
       .addFields(
         { name: 'Kupno itemów',                  value: `>>> **${config.legitServerName}**`, inline: false },
-        { name: 'Klient potwierdził transakcję – dziękujemy za zaufanie.', value: '\u200b', inline: false },
-        { name: '💰 ANA SHOP — Bezpieczne zakupy', value: '\u200b', inline: false },
+        { name: 'Klient potwierdził transakcję', value: '\u200b', inline: false },
+        { name: '🛡️ ANA SHOP — Bezpieczne zakupy', value: '\u200b', inline: false },
       )
       .setFooter({ text: 'ANA SHOP • Najlepszy sklep' })
       .setTimestamp();
@@ -313,6 +313,33 @@ module.exports = (client) => {
       setTimeout(() => reply.delete().catch(() => {}), 20000);
     }
 
+    // !say #kanał treść → bot wysyła wiadomość na podany kanał
+    if (message.content.startsWith('!say ') && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      const args = message.content.slice(5).trim();
+
+      // Wyciągnij wzmiankę kanału np. <#123456789>
+      const channelMention = args.match(/^<#(\d+)>/);
+      if (!channelMention) {
+        await message.reply({ content: '❌ Podaj kanał! Użycie: `!say #kanał treść wiadomości`', ephemeral: true }).catch(() => {});
+        return;
+      }
+
+      const targetChannel = message.guild.channels.cache.get(channelMention[1]);
+      if (!targetChannel) {
+        await message.reply({ content: '❌ Nie znaleziono kanału.', ephemeral: true }).catch(() => {});
+        return;
+      }
+
+      const tekst = args.slice(channelMention[0].length).trim();
+      if (!tekst) {
+        await message.reply({ content: '❌ Podaj treść wiadomości!', ephemeral: true }).catch(() => {});
+        return;
+      }
+
+      await targetChannel.send(tekst);
+      await message.delete().catch(() => {});
+    }
+
     // !kalkulator → panel kalkulatora prowizji
     if (message.content === '!kalkulator' && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
       const embed = new EmbedBuilder()
@@ -334,7 +361,7 @@ module.exports = (client) => {
             '🅿️ PayPal — **10%**\n' +
             '🪙 Kryptowaluty (LTC, SOL, BTC) — **0%**',
         })
-        .setFooter({ text: 'ANA SHOP • Najlepszy sklep • kurs: 1 PLN = 7 000' });
+        .setFooter({ text: 'ANA SHOP • Najlepszy sklep • kurs: 1 PLN = 6 500' });
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('calc_ile_otrzymam').setLabel('Ile otrzymam?').setStyle(ButtonStyle.Secondary),
@@ -406,7 +433,7 @@ module.exports = (client) => {
 
     // ── Kalkulator: wynik ──
     if (interaction.isModalSubmit() && interaction.customId.startsWith('calc_modal_')) {
-      const KURS = 7000;
+      const KURS = 6500;
       const PROWIZJE = {
         'psc_paragon':  { nazwa: '💳 PSC z paragonem',            procent: 15 },
         'psc_bez':      { nazwa: '💳 PSC bez paragonu',            procent: 25 },
@@ -461,7 +488,7 @@ module.exports = (client) => {
           { name: '💳 Metoda płatności', value: metoda.nazwa, inline: false },
           { name: '📊 Obliczenia',       value: wynikText,    inline: false },
         )
-        .setFooter({ text: 'ANA SHOP • kurs: 1 PLN = 7 000' })
+        .setFooter({ text: 'ANA SHOP • kurs: 1 PLN = 6 500' })
         .setTimestamp();
 
       await interaction.reply({ embeds: [embed], ephemeral: true });
