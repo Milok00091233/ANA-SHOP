@@ -406,7 +406,7 @@ module.exports = (client) => {
 
     // ── Kalkulator: wynik ──
     if (interaction.isModalSubmit() && interaction.customId.startsWith('calc_modal_')) {
-      const KURS = 6500;
+      const KURS = 7000;
       const PROWIZJE = {
         'psc_paragon':  { nazwa: '💳 PSC z paragonem',            procent: 15 },
         'psc_bez':      { nazwa: '💳 PSC bez paragonu',            procent: 25 },
@@ -461,7 +461,7 @@ module.exports = (client) => {
           { name: '💳 Metoda płatności', value: metoda.nazwa, inline: false },
           { name: '📊 Obliczenia',       value: wynikText,    inline: false },
         )
-        .setFooter({ text: 'ANA SHOP • kurs: 1 PLN = 6 500' })
+        .setFooter({ text: 'ANA SHOP • kurs: 1 PLN = 7 000' })
         .setTimestamp();
 
       await interaction.reply({ embeds: [embed], ephemeral: true });
