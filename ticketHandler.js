@@ -313,7 +313,7 @@ module.exports = (client) => {
           '>>> Potrzebujesz pomocy?\n\n' +
           'Kliknij przycisk poniżej aby otworzyć ticket pomocy.\n' +
           'Właściciel odpowie tak szybko jak to możliwe.\n\n' +
-          '**NIE ODPISUJ NIKOMU NA PV — TO SCAM!**'
+          '**NIE ODPISUJ NIKOMU NA PV × TO SCAM!**'
         )
         .setFooter({ text: 'ANA SHOP • Najlepszy sklep' });
 
