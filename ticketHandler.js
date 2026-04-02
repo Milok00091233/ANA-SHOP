@@ -370,6 +370,32 @@ module.exports = (client) => {
       setTimeout(() => reply.delete().catch(() => {}), 20000);
     }
 
+    // !resetinvites @user → resetuje zaproszenia danej osoby (tylko admin)
+    if (message.content.startsWith('!resetinvites') && message.member.roles.cache.has(config.wlascicielRoleId)) {
+      const target = message.mentions.users.first();
+      if (!target) {
+        await message.reply({ content: '❌ Podaj użytkownika! Użycie: `!resetinvites @nick`' }).then(m => setTimeout(() => m.delete().catch(() => {}), 5000));
+        await message.delete().catch(() => {});
+        return;
+      }
+
+      const guildId = message.guild.id;
+      if (!inviteStats.has(guildId)) inviteStats.set(guildId, new Map());
+      inviteStats.get(guildId).set(target.id, { joined: new Set(), left: new Set() });
+      saveStats();
+
+      const embed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle('🔄 Zaproszenia zresetowane')
+        .setDescription(`Zaproszenia użytkownika ${target} zostały zresetowane do **0**.`)
+        .setFooter({ text: 'ANA SHOP • Najlepszy sklep' })
+        .setTimestamp();
+
+      await message.delete().catch(() => {});
+      const reply = await message.channel.send({ embeds: [embed] });
+      setTimeout(() => reply.delete().catch(() => {}), 10000);
+    }
+
     // !say #kanał treść → bot wysyła wiadomość na podany kanał
     if (message.content.startsWith('!say ') && message.member.permissions.has(PermissionFlagsBits.Administrator)) {
       const args = message.content.slice(5).trim();
@@ -418,7 +444,7 @@ module.exports = (client) => {
             '🅿️ PayPal — **10%**\n' +
             '🪙 Kryptowaluty (LTC, SOL, BTC) — **0%**',
         })
-        .setFooter({ text: 'ANA SHOP • Najlepszy sklep • kurs: 1 PLN = 6 500' });
+        .setFooter({ text: 'ANA SHOP • Najlepszy sklep • kurs: 1 PLN = 7 000' });
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('calc_ile_otrzymam').setLabel('Ile otrzymam?').setStyle(ButtonStyle.Secondary),
@@ -490,7 +516,7 @@ module.exports = (client) => {
 
     // ── Kalkulator: wynik ──
     if (interaction.isModalSubmit() && interaction.customId.startsWith('calc_modal_')) {
-      const KURS = 6500;
+      const KURS = 7000;
       const PROWIZJE = {
         'psc_paragon':  { nazwa: '💳 PSC z paragonem',            procent: 15 },
         'psc_bez':      { nazwa: '💳 PSC bez paragonu',            procent: 25 },
@@ -545,7 +571,7 @@ module.exports = (client) => {
           { name: '💳 Metoda płatności', value: metoda.nazwa, inline: false },
           { name: '📊 Obliczenia',       value: wynikText,    inline: false },
         )
-        .setFooter({ text: 'ANA SHOP • kurs: 1 PLN = 6 500' })
+        .setFooter({ text: 'ANA SHOP • kurs: 1 PLN = 7 000' })
         .setTimestamp();
 
       await interaction.reply({ embeds: [embed], ephemeral: true });
