@@ -25,11 +25,66 @@ const config = {
 const ticketData = new Map();
 
 // ─────────────────────────────────────────────
-// SYSTEM ŚLEDZENIA ZAPROSZEŃ
+// SYSTEM ŚLEDZENIA ZAPROSZEŃ (z zapisem do pliku)
 // ─────────────────────────────────────────────
+const fs   = require('fs');
+const path = require('path');
+const STATS_FILE = path.join(__dirname, 'invite_stats.json');
+
 const inviteCache = new Map();
 const joinedVia   = new Map();
 const inviteStats = new Map();
+
+// Wczytaj dane z pliku przy starcie
+function loadStats() {
+  try {
+    if (!fs.existsSync(STATS_FILE)) return;
+    const raw = JSON.parse(fs.readFileSync(STATS_FILE, 'utf-8'));
+    for (const [guildId, users] of Object.entries(raw)) {
+      const gMap = new Map();
+      for (const [userId, data] of Object.entries(users)) {
+        gMap.set(userId, {
+          joined: new Set(data.joined),
+          left:   new Set(data.left),
+        });
+        // Odtwórz joinedVia
+        for (const memberId of data.joined) {
+          if (!joinedVia.has(guildId)) joinedVia.set(guildId, new Map());
+          joinedVia.get(guildId).set(memberId, userId);
+        }
+        for (const memberId of data.left) {
+          if (!joinedVia.has(guildId)) joinedVia.set(guildId, new Map());
+          joinedVia.get(guildId).set(memberId, userId);
+        }
+      }
+      inviteStats.set(guildId, gMap);
+    }
+    console.log('✅ Wczytano statystyki zaproszeń z pliku.');
+  } catch (e) {
+    console.error('⚠️ Błąd wczytywania statystyk:', e.message);
+  }
+}
+
+// Zapisz dane do pliku
+function saveStats() {
+  try {
+    const raw = {};
+    for (const [guildId, gMap] of inviteStats.entries()) {
+      raw[guildId] = {};
+      for (const [userId, data] of gMap.entries()) {
+        raw[guildId][userId] = {
+          joined: [...data.joined],
+          left:   [...data.left],
+        };
+      }
+    }
+    fs.writeFileSync(STATS_FILE, JSON.stringify(raw, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('⚠️ Błąd zapisu statystyk:', e.message);
+  }
+}
+
+loadStats();
 
 function getStats(guildId, inviterId) {
   if (!inviteStats.has(guildId)) inviteStats.set(guildId, new Map());
@@ -96,6 +151,7 @@ module.exports = (client) => {
       const stats = getStats(member.guild.id, inviterId);
       stats.joined.add(member.id);
       stats.left.delete(member.id);
+      saveStats();
     }
 
     const stats = inviterId ? getStats(member.guild.id, inviterId) : null;
@@ -130,6 +186,7 @@ module.exports = (client) => {
     const stats = getStats(member.guild.id, originalInviterId);
     stats.joined.delete(member.id);
     stats.left.add(member.id);
+    saveStats();
   });
 
   // ─────────────────────────────────────────────
