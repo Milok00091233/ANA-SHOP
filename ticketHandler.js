@@ -781,5 +781,173 @@ module.exports = (client) => {
       await interaction.reply({ content: '🔒 Zamykanie ticketu za 5 sekund...' });
       setTimeout(async () => { ticketData.delete(channel.id); await channel.delete().catch(() => {}); }, 5000);
     }
+
+    // ── Giveaway: dołącz ──
+    if (customId.startsWith('giveaway_join_')) {
+      const giveawayId = customId.replace('giveaway_join_', '');
+      const giveaway = giveawayData.get(giveawayId);
+      if (!giveaway) return interaction.reply({ content: '❌ Ten konkurs już nie istnieje.', ephemeral: true });
+      if (giveaway.ended) return interaction.reply({ content: '❌ Ten konkurs już się zakończył!', ephemeral: true });
+      if (giveaway.participants.has(member.id)) return interaction.reply({ content: '✅ Już bierzesz udział w tym konkursie!', ephemeral: true });
+
+      giveaway.participants.add(member.id);
+      await interaction.reply({ content: `🎉 Dołączyłeś do konkursu! Aktualnie uczestniczy **${giveaway.participants.size}** osób.`, ephemeral: true });
+
+      // Zaktualizuj embed
+      const updatedEmbed = buildGiveawayEmbed(giveaway);
+      const updatedRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`giveaway_join_${giveawayId}`).setLabel(`🎉 Weź udział (${giveaway.participants.size})`).setStyle(ButtonStyle.Success)
+      );
+      await interaction.message.edit({ embeds: [updatedEmbed], components: [updatedRow] }).catch(() => {});
+    }
+
+    // ── Giveaway: zakończ wcześniej ──
+    if (customId.startsWith('giveaway_end_')) {
+      if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ Tylko admin może zakończyć konkurs!', ephemeral: true });
+      }
+      const giveawayId = customId.replace('giveaway_end_', '');
+      await endGiveaway(giveawayId, interaction.client);
+      await interaction.reply({ content: '✅ Konkurs zakończony!', ephemeral: true });
+    }
+
+  });
+
+  // ─────────────────────────────────────────────
+  // GIVEAWAY SYSTEM
+  // ─────────────────────────────────────────────
+  const giveawayData = new Map();
+  const giveawayTimers = new Map();
+
+  function parseDuration(str) {
+    const match = str.match(/^(\d+)(s|m|h|d)$/i);
+    if (!match) return null;
+    const val = parseInt(match[1]);
+    const unit = match[2].toLowerCase();
+    const multipliers = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
+    return val * multipliers[unit];
+  }
+
+  function formatTimeLeft(ms) {
+    if (ms <= 0) return 'Zakończony';
+    const d = Math.floor(ms / 86400000);
+    const h = Math.floor((ms % 86400000) / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    if (d > 0) return `${d} dni ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+
+  function buildGiveawayEmbed(giveaway) {
+    const timeLeft = giveaway.endsAt - Date.now();
+    return new EmbedBuilder()
+      .setColor(giveaway.ended ? 0x99aab5 : 0xf1c40f)
+      .setTitle('🎁 Konkurs')
+      .addFields(
+        { name: '🎁 Konkurs zakończył się:', value: `<t:${Math.floor(giveaway.endsAt / 1000)}:R>`, inline: true },
+        { name: '🔧 Utworzony przez:', value: `<@${giveaway.creatorId}>`, inline: true },
+        { name: '📅 Utworzony dnia:', value: `<t:${Math.floor(giveaway.createdAt / 1000)}:D>`, inline: true },
+        { name: '🎁 Nagroda:', value: giveaway.prize, inline: true },
+        { name: giveaway.ended ? '🏆 Zwycięzcy:' : '⏳ Czas do końca:', value: giveaway.ended ? (giveaway.winners.length > 0 ? giveaway.winners.map(w => `<@${w}>`).join(', ') : 'Brak uczestników') : formatTimeLeft(timeLeft), inline: true },
+      )
+      .setFooter({ text: `ANA SHOP • ${giveaway.ended ? `Konkurs zakończony (${giveaway.participants.size} osób wzięło udział)` : `${giveaway.participants.size} uczestników`}` })
+      .setTimestamp();
+  }
+
+  async function endGiveaway(giveawayId, client) {
+    const giveaway = giveawayData.get(giveawayId);
+    if (!giveaway || giveaway.ended) return;
+
+    giveaway.ended = true;
+
+    // Losuj zwycięzców
+    const pool = [...giveaway.participants];
+    const winners = [];
+    for (let i = 0; i < Math.min(giveaway.winnersCount, pool.length); i++) {
+      const idx = Math.floor(Math.random() * pool.length);
+      winners.push(pool.splice(idx, 1)[0]);
+    }
+    giveaway.winners = winners;
+
+    // Zaktualizuj embed
+    const channel = await client.channels.fetch(giveaway.channelId).catch(() => null);
+    if (channel) {
+      const msg = await channel.messages.fetch(giveaway.messageId).catch(() => null);
+      if (msg) {
+        const endedEmbed = buildGiveawayEmbed(giveaway);
+        const disabledRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`giveaway_join_${giveawayId}`).setLabel(`🎉 Konkurs zakończony (${giveaway.participants.size})`).setStyle(ButtonStyle.Secondary).setDisabled(true)
+        );
+        await msg.edit({ embeds: [endedEmbed], components: [disabledRow] }).catch(() => {});
+      }
+
+      // Ogłoś zwycięzców
+      if (winners.length > 0) {
+        await channel.send({
+          content: `🎉 **Konkurs zakończony!**\nGratulacje ${winners.map(w => `<@${w}>`).join(', ')}! Wygrałeś **${giveaway.prize}**! Skontaktuj się z <@${giveaway.creatorId}>.`
+        });
+      } else {
+        await channel.send({ content: `😔 Konkurs na **${giveaway.prize}** zakończył się bez zwycięzcy — nikt nie dołączył.` });
+      }
+    }
+
+    // Anuluj timer
+    clearTimeout(giveawayTimers.get(giveawayId));
+    giveawayTimers.delete(giveawayId);
+  }
+
+  // Komenda !giveaway
+  client.on('messageCreate', async (message) => {
+    if (message.author.bot || !message.member) return;
+    if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return;
+
+    // !giveaway <czas> <nagroda>  np: !giveaway 1d 500k
+    if (message.content.startsWith('!giveaway ')) {
+      const args = message.content.slice('!giveaway '.length).trim().split(/\s+/);
+      if (args.length < 2) {
+        return message.reply('❌ Użycie: `!giveaway <czas> <nagroda>`\nPrzykład: `!giveaway 1d 500k` lub `!giveaway 12h Anarchia LifeSteal`').then(m => setTimeout(() => m.delete().catch(() => {}), 8000));
+      }
+
+      const durationMs = parseDuration(args[0]);
+      if (!durationMs) {
+        return message.reply('❌ Nieprawidłowy czas! Użyj: `30s`, `10m`, `2h`, `1d`').then(m => setTimeout(() => m.delete().catch(() => {}), 8000));
+      }
+
+      const prize = args.slice(1).join(' ');
+      const endsAt = Date.now() + durationMs;
+      const giveawayId = `${message.guild.id}_${Date.now()}`;
+
+      const giveaway = {
+        id: giveawayId,
+        prize,
+        creatorId: message.author.id,
+        channelId: message.channel.id,
+        messageId: null,
+        participants: new Set(),
+        winners: [],
+        winnersCount: 1,
+        endsAt,
+        createdAt: Date.now(),
+        ended: false,
+      };
+
+      giveawayData.set(giveawayId, giveaway);
+      await message.delete().catch(() => {});
+
+      const embed = buildGiveawayEmbed(giveaway);
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`giveaway_join_${giveawayId}`).setLabel('🎉 Weź udział (0)').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`giveaway_end_${giveawayId}`).setLabel('🔴 Zakończ').setStyle(ButtonStyle.Danger)
+      );
+
+      const msg = await message.channel.send({ embeds: [embed], components: [row] });
+      giveaway.messageId = msg.id;
+
+      // Timer zakończenia
+      const timer = setTimeout(() => endGiveaway(giveawayId, message.client), durationMs);
+      giveawayTimers.set(giveawayId, timer);
+    }
   });
 };
