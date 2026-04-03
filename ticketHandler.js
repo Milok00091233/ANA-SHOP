@@ -18,8 +18,9 @@ const config = {
   verifiedRoleId:   process.env.VERIFIED_ROLE_ID,
   lobbyChannelId:   process.env.LOBBY_CHANNEL_ID,
   legitChannelId:   process.env.LEGIT_CHANNEL_ID,
-  wlascicielRoleId: process.env.WLASCICIEL_ROLE_ID,
-  legitServerName:  process.env.LEGIT_SERVER_NAME || 'Anarchia LifeSteal',
+  wlascicielRoleId:  process.env.WLASCICIEL_ROLE_ID,
+  legitServerName:   process.env.LEGIT_SERVER_NAME || 'Anarchia LifeSteal',
+  invitesChannelId:  process.env.INVITES_CHANNEL_ID,
 };
 
 const ticketData  = new Map();
@@ -193,6 +194,15 @@ module.exports = (client) => {
     if (message.author.bot || !message.member) return;
     if (message.channel.id === config.legitChannelId) return;
 
+    // ── Auto-usuń wiadomości zweryfikowanych na kanale zaproszeń ──
+    if (config.invitesChannelId && message.channel.id === config.invitesChannelId) {
+      const isVerified = message.member.roles.cache.has(config.verifiedRoleId);
+      if (isVerified && !message.author.bot) {
+        setTimeout(() => message.delete().catch(() => {}), 10000);
+      }
+      return;
+    }
+
     const isAdmin = message.member.permissions.has(PermissionFlagsBits.Administrator);
 
     // !setup
@@ -232,6 +242,46 @@ module.exports = (client) => {
       );
       await message.channel.send({ embeds: [embed], components: [row] });
       await message.delete().catch(() => {});
+    }
+
+    // !zaproszenia → panel z przyciskiem
+    if (message.content === '!zaproszenia' && isAdmin) {
+      const embed = new EmbedBuilder()
+        .setColor(0x2b2d31)
+        .setTitle('📬 ANA SHOP × ZAPROSZENIA')
+        .setDescription('Kliknij przycisk poniżej, aby sprawdzić swoje statystyki zaproszeń!')
+        .addFields(
+          { name: '👤 × Ile osób zaprosiłeś na serwer', value: '\u200b', inline: false },
+          { name: '⏳ × Ile z nich zostało wymaganą liczbę dni', value: '\u200b', inline: false },
+          { name: '✅ × Ile spełnia kryteria konta', value: '\u200b', inline: false },
+          { name: '🎁 × Ile masz dodatkowych zaproszeń', value: '\u200b', inline: false },
+        )
+        .setFooter({ text: 'ANA SHOP • Najlepszy sklep' });
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('check_invites').setLabel('❤️ Sprawdź moje zaproszenia').setStyle(ButtonStyle.Danger)
+      );
+      await message.channel.send({ embeds: [embed], components: [row] });
+      await message.delete().catch(() => {});
+    }
+
+    // !resetinvites @user
+    if (message.content.startsWith('!resetinvites') && message.member.roles.cache.has(config.wlascicielRoleId)) {
+      const target = message.mentions.users.first();
+      if (!target) {
+        await message.reply('❌ Podaj użytkownika! Użycie: `!resetinvites @nick`').then(m => setTimeout(() => m.delete().catch(() => {}), 5000));
+        await message.delete().catch(() => {});
+        return;
+      }
+      const guildId = message.guild.id;
+      if (!inviteStats.has(guildId)) inviteStats.set(guildId, new Map());
+      inviteStats.get(guildId).set(target.id, { joined: new Map(), left: new Set() });
+      const embed = new EmbedBuilder()
+        .setColor(0xff0000).setTitle('🔄 Zaproszenia zresetowane')
+        .setDescription(`Zaproszenia użytkownika ${target} zostały zresetowane do **0**.`)
+        .setFooter({ text: 'ANA SHOP • Najlepszy sklep' }).setTimestamp();
+      await message.delete().catch(() => {});
+      const reply = await message.channel.send({ embeds: [embed] });
+      setTimeout(() => reply.delete().catch(() => {}), 10000);
     }
 
     // !say #kanał treść
@@ -299,6 +349,57 @@ module.exports = (client) => {
   client.on('interactionCreate', async (interaction) => {
     const { member, guild, channel } = interaction;
     const wlascicielRoleId = config.wlascicielRoleId;
+
+    // ── Sprawdź zaproszenia (przycisk) ──
+    if (interaction.isButton() && interaction.customId === 'check_invites') {
+      const userId  = member.id;
+      const guildId = guild.id;
+      const stats   = getStats(guildId, userId);
+
+      const now = Date.now();
+      let totalInvited = stats.joined.size + stats.left.size;
+      let onServer     = stats.joined.size;
+      let leftServer   = stats.left.size;
+
+      // Ile zostało min. MIN_SERVER_DAYS dni
+      let stayedDays = 0;
+      for (const [memberId, joinedAt] of stats.joined.entries()) {
+        const daysOnServer = (now - joinedAt) / (1000 * 60 * 60 * 24);
+        if (daysOnServer >= MIN_SERVER_DAYS) stayedDays++;
+      }
+
+      // Ile spełnia kryterium wieku konta (min. 4 miesiące)
+      let meetsAccountAge = 0;
+      let notMeetsAccountAge = 0;
+      for (const memberId of stats.joined.keys()) {
+        try {
+          const guildMember = await guild.members.fetch(memberId).catch(() => null);
+          if (guildMember) {
+            const accountAge = now - guildMember.user.createdTimestamp;
+            if (accountAge >= MIN_ACCOUNT_AGE_MS) meetsAccountAge++;
+            else notMeetsAccountAge++;
+          }
+        } catch (e) {}
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor(0x2b2d31)
+        .setTitle('📬 ANA SHOP × ZAPROSZENIA')
+        .setDescription(`${member} posiada **${totalInvited}** zaproszeń!`)
+        .addFields(
+          { name: '👤 × Osoby, które dołączyły na serwer:', value: `**${onServer}**`, inline: false },
+          { name: '🚪 × Osoby, które opuściły serwer:', value: `**${leftServer}**`, inline: false },
+          { name: '⏳ × Osoby, które są min. 3 dni:', value: `**${stayedDays}**`, inline: false },
+          { name: '✅ × Konto założone min. 4 mies.:', value: `**${meetsAccountAge}**`, inline: false },
+          { name: '⚠️ × Niespełniające kryteriów (< konto 4 mies.):', value: `**${notMeetsAccountAge}**`, inline: false },
+          { name: '🎁 × Dodatkowe zaproszenia:', value: `**0**`, inline: false },
+        )
+        .setFooter({ text: 'ANA SHOP • Najlepszy sklep' })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+      return;
+    }
 
     // ── Kalkulator ──
     if (interaction.isButton() && (interaction.customId === 'calc_ile_otrzymam' || interaction.customId === 'calc_ile_musze_dac')) {
