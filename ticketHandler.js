@@ -18,9 +18,9 @@ const config = {
   verifiedRoleId:   process.env.VERIFIED_ROLE_ID,
   lobbyChannelId:   process.env.LOBBY_CHANNEL_ID,
   legitChannelId:   process.env.LEGIT_CHANNEL_ID,
-  wlascicielRoleId:  process.env.WLASCICIEL_ROLE_ID,
-  legitServerName:   process.env.LEGIT_SERVER_NAME || 'Anarchia LifeSteal',
-  invitesChannelId:  process.env.INVITES_CHANNEL_ID,
+  wlascicielRoleId: process.env.WLASCICIEL_ROLE_ID,
+  legitServerName:  process.env.LEGIT_SERVER_NAME || 'Anarchia LifeSteal',
+  invitesChannelId: process.env.INVITES_CHANNEL_ID,
 };
 
 const ticketData  = new Map();
@@ -111,7 +111,7 @@ module.exports = (client) => {
       .addFields(
         { name: '👤 Użytkownik', value: `${member} (${member.user.username})`, inline: true },
         { name: '🆔 ID', value: member.id, inline: true },
-        { name: '📨 Zaproszony przez', value: `${inviterText}`, inline: false },
+        { name: '📨 Zaproszony przez', value: `${inviterText} • ✅ **${joinedCount}** na serwerze / 🚪 **${leftCount}** wyszło`, inline: false },
         { name: '📅 Konto założone', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true },
         { name: '👥 Członków na serwerze', value: `${member.guild.memberCount}`, inline: true },
       )
@@ -194,11 +194,16 @@ module.exports = (client) => {
     if (message.author.bot || !message.member) return;
     if (message.channel.id === config.legitChannelId) return;
 
-    // ── Auto-usuń wiadomości zweryfikowanych na kanale zaproszeń ──
+    // ── Auto-usuń wiadomości na kanale zaproszeń ──
     if (config.invitesChannelId && message.channel.id === config.invitesChannelId) {
-      const isVerified = message.member.roles.cache.has(config.verifiedRoleId);
-      if (isVerified && !message.author.bot) {
+      if (message.author.bot) return;
+      // Komendy slash (interakcje) są obsługiwane osobno — tu trafiają tylko zwykłe wiadomości
+      // Wiadomości zaczynające się od "/" traktujemy jak próbę komendy → usuń po 10s
+      if (message.content.startsWith('/')) {
         setTimeout(() => message.delete().catch(() => {}), 10000);
+      } else {
+        // Wszystkie inne wiadomości → usuń od razu
+        await message.delete().catch(() => {});
       }
       return;
     }
@@ -349,6 +354,19 @@ module.exports = (client) => {
   client.on('interactionCreate', async (interaction) => {
     const { member, guild, channel } = interaction;
     const wlascicielRoleId = config.wlascicielRoleId;
+
+    // ── Auto-usuń odpowiedzi slash na kanale zaproszeń po 10s ──
+    if (config.invitesChannelId && interaction.channelId === config.invitesChannelId) {
+      if (interaction.isChatInputCommand()) {
+        // Poczekaj aż bot odpowie, potem usuń po 10s
+        interaction.client.once('interactionCreate', () => {});
+        setTimeout(async () => {
+          try {
+            await interaction.deleteReply().catch(() => {});
+          } catch (e) {}
+        }, 10000);
+      }
+    }
 
     // ── Sprawdź zaproszenia (przycisk) ──
     if (interaction.isButton() && interaction.customId === 'check_invites') {
