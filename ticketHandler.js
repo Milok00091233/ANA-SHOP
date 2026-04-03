@@ -196,13 +196,15 @@ module.exports = (client) => {
 
     // ── Auto-usuń wiadomości na kanale zaproszeń ──
     if (config.invitesChannelId && message.channel.id === config.invitesChannelId) {
-      if (message.author.bot) return;
-      // Komendy slash (interakcje) są obsługiwane osobno — tu trafiają tylko zwykłe wiadomości
-      // Wiadomości zaczynające się od "/" traktujemy jak próbę komendy → usuń po 10s
+      if (message.author.bot) {
+        // Usuń wiadomości botów (np. InviteTracker) po 10s
+        setTimeout(() => message.delete().catch(() => {}), 10000);
+        return;
+      }
+      // Komendy slash → usuń po 10s, reszta → od razu
       if (message.content.startsWith('/')) {
         setTimeout(() => message.delete().catch(() => {}), 10000);
       } else {
-        // Wszystkie inne wiadomości → usuń od razu
         await message.delete().catch(() => {});
       }
       return;
